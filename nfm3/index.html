@@ -22,11 +22,17 @@
         src: url(data/verdana.ttf);
       }
     </style>
+    <script src="gl-matrix-min.js"></script>
 	<script type="module" crossorigin="use-credentials">
 		import {ChiptuneJsPlayer} from './chiptune3.js';
 		window.chiptune = new ChiptuneJsPlayer();
 	</script>
-    <script src="gl-matrix-min.js"></script>
+	<script>
+		const params = new URLSearchParams(document.location.search);
+		const whatConfig = params.get("game");
+		const getUserDesiredConfig = '<script src=' + whatConfig + '.config.js><\/script>';
+		document.head.insertAdjacentHTML('afterbegin', getUserDesiredConfig);
+	</script>
     <script src="needmad.js"></script>
     <!--<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 	-->

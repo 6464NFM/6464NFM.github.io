@@ -1,18 +1,24 @@
 if (!isSecureContext) alert("NFM will not run outside of secure context!!! please use localhost or a server with HTTPS!!!")
-/* global variables! */
 
+if (typeof whatConfig != 'undefined') {
+	var script_tag = document.createElement('script'); //we load whatever is in the "game" url
+	script_tag.type = 'text/javascript';               //paramater checked in index.html
+	script_tag.src = whatConfig + ".config.js";
+	document.head.appendChild(script_tag);
+}
 // mtouch = carIsGrounded
-
-var practiceGame = false;
-var nfm1 = false;
-var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
-var instantRaceStart = false;
-var instantCarSelect = true;
-var requireHandbrakeForStunts = "auto";
-var maxPower = 98; //default 98, modified default is 120
-var powerPinnedHigh = 200; //default 200, modified is 400
-var powerPinnedLow = 100; //default 100, modified is 300
-
+if (typeof customConfigLoaded === 'undefined') {
+	/* global variables! */
+	var practiceGame = false;
+	var nfm1 = false;
+	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
+	var instantRaceStart = false;
+	var instantCarSelect = true;
+	var requireHandbrakeForStunts = "auto";
+	var maxPower = 98; //default 98, modified default is 120
+	var powerPinnedHigh = 200; //default 200, modified is 400
+	var powerPinnedLow = 100; //default 100, modified is 300
+}
 
 //dont interact with these defaults
 handBrakeStunt = false;
@@ -12321,7 +12327,7 @@ function drawhreplay() {
         }
     }
     if (htyp == 3) {
-        drawcs(90, "You Wasted'em!", 0, 32, 64, 1);
+        drawcs(90, "You Wasted 'em!", 0, 32, 64, 1);
         if (holdf == 13 || holdf == 16) {
             rd.globalAlpha = 0.5;
             rd.fillStyle = "#FFFFFF";
@@ -12611,7 +12617,7 @@ function endgame() {
         rd.globalAlpha = 1;
     }
     if (fredo >= 50) {
-        var contxt = "Congradulations!";
+        var contxt = "Congratulations!";
         if (!winner) {
             contxt = "Game Over";
         }
