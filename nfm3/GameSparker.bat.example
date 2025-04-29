@@ -1,0 +1,5 @@
+@echo off
+start /min simple-http-server -p 6464 --cert 192.168.43.114.p12 --certpass changeit
+timeout /t 1 /nobreak>nul
+start https://localhost:6464/index.html
+exit
