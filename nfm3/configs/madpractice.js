@@ -1,7 +1,9 @@
 var customConfigLoaded = true;
 
+var FOV = 80; //default 55 (will always default to 55 on mobile devices!)
+var HDTextures = true;
 var practiceGame = true;
-var nfm1 = true;
+var nfm1 = false;
 var carsCanFly = true; //launch your car off a jump and hit shift + spacebar
 var instantRaceStart = true;
 var instantCarSelect = true;
