@@ -26,7 +26,8 @@ if (typeof customConfigLoaded === 'undefined') {
 //dont interact with these defaults
 handBrakeStunt = false;
 flyingCars = false;
-
+textureResolution = 256;
+if (HDTextures) var textureResolution = 1024;
 
 
 if (requireHandbrakeForStunts == "auto") {
@@ -39,12 +40,6 @@ if (requireHandbrakeForStunts == "auto") {
 
 if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
 	FOV = 55; //I'm deciding to make the field of view always the game default on mobile devices, lmk if this is a good shout
-}
-
-if (HDTextures) {
-	var textureResolution = 1024;
-} else {
-	var textureResolution = 256;
 }
 
 //gamecode start
