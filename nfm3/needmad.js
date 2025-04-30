@@ -1,11 +1,5 @@
 if (!isSecureContext) alert("NFM will not run outside of secure context!!! please use localhost or a server with HTTPS!!!")
 
-if (typeof whatConfig != 'undefined') {
-	var script_tag = document.createElement('script'); //we load whatever is in the "game" url
-	script_tag.type = 'text/javascript';               //paramater checked in index.html
-	script_tag.src = "configs/" + whatConfig + ".js";
-	document.head.appendChild(script_tag);
-}
 // mtouch = carIsGrounded
 if (typeof customConfigLoaded === 'undefined') {
 	/* global variables! */
@@ -21,14 +15,12 @@ if (typeof customConfigLoaded === 'undefined') {
 	var maxPower = 98; //default 98, modified default is 120
 	var powerPinnedHigh = 200; //default 200, modified is 400
 	var powerPinnedLow = 100; //default 100, modified is 300
+	console.log("this shouldnt load");
 }
 
 //dont interact with these defaults
 handBrakeStunt = false;
 flyingCars = false;
-textureResolution = 256;
-if (HDTextures) var textureResolution = 1024;
-
 
 if (requireHandbrakeForStunts == "auto") {
 	if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
@@ -40,6 +32,12 @@ if (requireHandbrakeForStunts == "auto") {
 
 if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
 	FOV = 55; //I'm deciding to make the field of view always the game default on mobile devices, lmk if this is a good shout
+}
+
+if (HDTextures) {
+	var textureResolution = 1024;
+} else {
+	var textureResolution = 256;
 }
 
 //gamecode start
