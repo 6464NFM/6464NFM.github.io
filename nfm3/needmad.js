@@ -3,7 +3,7 @@ if (!isSecureContext) alert("NFM will not run outside of secure context!!! pleas
 if (typeof whatConfig != 'undefined') {
 	var script_tag = document.createElement('script'); //we load whatever is in the "game" url
 	script_tag.type = 'text/javascript';               //paramater checked in index.html
-	script_tag.src = whatConfig + ".config.js";
+	script_tag.src = "configs/" + whatConfig + ".js";
 	document.head.appendChild(script_tag);
 }
 // mtouch = carIsGrounded
@@ -15,6 +15,7 @@ if (typeof customConfigLoaded === 'undefined') {
 	var instantRaceStart = false;
 	var instantCarSelect = true;
 	var requireHandbrakeForStunts = "auto";
+	var defaultPowerLevel = 98; //when the game starts, everyone's power level will be this value (default 98)
 	var maxPower = 98; //default 98, modified default is 120
 	var powerPinnedHigh = 200; //default 200, modified is 400
 	var powerPinnedLow = 100; //default 100, modified is 300
@@ -6681,7 +6682,7 @@ function inishmad() {
         clear[c] = 0;
         nlaps[c] = 0;
         focus[c] = -1;
-        power[c] = 98;
+        power[c] = defaultPowerLevel;
         missedcp[c] = 0;
         lastcolido[c] = 0;
         nofocus[c] = false;
