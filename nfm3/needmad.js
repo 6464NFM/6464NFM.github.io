@@ -9,6 +9,8 @@ if (typeof whatConfig != 'undefined') {
 // mtouch = carIsGrounded
 if (typeof customConfigLoaded === 'undefined') {
 	/* global variables! */
+	var FOV = 80; //default 55 (will always default to 55 on mobile devices!)
+	var HDTextures = true;
 	var practiceGame = false;
 	var nfm1 = false;
 	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
@@ -33,9 +35,19 @@ if (requireHandbrakeForStunts == "auto") {
 	} else {
 		requireHandbrakeForStunts = true;
 	}
-} 
+}
 
+if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
+	FOV = 55; //I'm deciding to make the field of view always the game default on mobile devices, lmk if this is a good shout
+}
 
+if (HDTextures) {
+	var textureResolution = 1024;
+} else {
+	var textureResolution = 256;
+}
+
+//gamecode start
 var programInfo = [];
 function newparticle() {
     return {
@@ -267,7 +279,11 @@ function loadrad3D(file, rad) {
                         rad.copyonly = true;
                     }
                     if (strtsWith(line, "texture")) {
-                        texufile[rad.nt] = "data/3D/textures/" + getStringValue("texture", line, 0);
+						if (HDTextures) {
+							texufile[rad.nt] = "data/3D/textures/" + getStringValue("texture", line, 0).replace('.png', '_waifu2x_noise-1_scale_x4.0.png');
+						} else {
+							texufile[rad.nt] = "data/3D/textures/" + getStringValue("texture", line, 0);
+						}
                         rad.nt++;
                     }
                     if (strtsWith(line, "intertexture")) {
@@ -555,7 +571,11 @@ function loadtgroup(tgrp, n) {
         }
         tgrp.loaded = 1;
     };
-    image.src = "data/3D/textures/g" + n + ".png";
+	if (HDTextures) {
+		image.src = "data/3D/textures/g" + n + "_waifu2x_noise-1_scale_x4.0.png";
+	} else {
+		image.src = "data/3D/textures/g" + n + ".png";
+	}
 }
 function cartextures() {
     for (var i = 0; i < 19; i++) {
@@ -571,9 +591,9 @@ function cartextures() {
         gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, carobj[i].texture[0], 0);
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-            var pixels = new Uint8Array((256 * 256 * 4));
-            gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-            for (var p = 0; p < (256 * 256 * 4); p += 4) {
+            var pixels = new Uint8Array((textureResolution * textureResolution * 4));
+            gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            for (var p = 0; p < (textureResolution * textureResolution * 4); p += 4) {
                 if ((pixels[p] == 116) && (pixels[p + 1] == 130) && (pixels[p + 2] == 140)) {
                     pixels[p] = 92;
                     pixels[p + 1] = 155;
@@ -582,7 +602,7 @@ function cartextures() {
                 }
             }
             gl.bindTexture(gl.TEXTURE_2D, carobj[i].texture[0]);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -604,9 +624,9 @@ function gamecartextures() {
         gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, carobj[car[c].typ].texture[1], 0);
         if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-            var pixels = new Uint8Array((256 * 256 * 4));
-            gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-            for (var p = 0; p < (256 * 256 * 4); p += 4) {
+            var pixels = new Uint8Array((textureResolution * textureResolution * 4));
+            gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            for (var p = 0; p < (textureResolution * textureResolution * 4); p += 4) {
                 if ((pixels[p] == 116) && (pixels[p + 1] == 130) && (pixels[p + 2] == 140)) {
                     pixels[p] = skyglass[0];
                     pixels[p + 1] = skyglass[1];
@@ -615,7 +635,7 @@ function gamecartextures() {
                 }
             }
             gl.bindTexture(gl.TEXTURE_2D, carobj[car[c].typ].texture[1]);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
             gl.generateMipmap(gl.TEXTURE_2D);
         }
         gl.deleteFramebuffer(framebuffer);
@@ -652,9 +672,9 @@ function groundtexture(n, r, g, b, huef, satf) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, ground.texture, 0);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-        var pixels = new Uint8Array((256 * 256 * 4));
-        gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        for (var p = 0; p < (256 * 256 * 4); p += 4) {
+        var pixels = new Uint8Array((textureResolution * textureResolution * 4));
+        gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        for (var p = 0; p < (textureResolution * textureResolution * 4); p += 4) {
             var hue = (hsl[0] + ((1 - (pixels[p] / 188)) * huef));
             if (hue > 1) {
                 hue -= 1;
@@ -682,7 +702,7 @@ function groundtexture(n, r, g, b, huef, satf) {
             pixels[p + 2] = rgb[2];
         }
         gl.bindTexture(gl.TEXTURE_2D, ground.texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         gl.generateMipmap(gl.TEXTURE_2D);
     }
     gl.deleteFramebuffer(framebuffer);
@@ -731,9 +751,9 @@ function skytexture(skyc, fogc, cloudsc, cloudtyp) {
     var framebuffer = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tempt, 0);
-    var hpixels = new Uint8Array((256 * 256 * 4));
+    var hpixels = new Uint8Array((textureResolution * textureResolution * 4));
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-        gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, hpixels);
+        gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, hpixels);
     }
     gl.deleteFramebuffer(framebuffer);
     gl.deleteTexture(tempt);
@@ -745,9 +765,9 @@ function skytexture(skyc, fogc, cloudsc, cloudtyp) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, skydom.texture, 0);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-        var pixels = new Uint8Array((256 * 256 * 4));
-        gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        for (var p = 0; p < (256 * 256 * 4); p += 4) {
+        var pixels = new Uint8Array((textureResolution * textureResolution * 4));
+        gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        for (var p = 0; p < (textureResolution * textureResolution * 4); p += 4) {
             var hfact = (hpixels[p] / 510);
             var fact = ((pixels[p] / 128) - (hfact * 2));
             if (fact > 1) {
@@ -761,7 +781,7 @@ function skytexture(skyc, fogc, cloudsc, cloudtyp) {
             pixels[p + 2] = ((((skyc[2] * (1 - fact)) + (cloudsc[2] * fact)) * (1 - hfact)) + (fogc[2] * hfact));
         }
         gl.bindTexture(gl.TEXTURE_2D, skydom.texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         gl.generateMipmap(gl.TEXTURE_2D);
     }
     gl.deleteFramebuffer(framebuffer);
@@ -1843,7 +1863,11 @@ function loaddata() {
                 grndimg[i].onload = function () {
                     dataload += 17;
                 };
-                grndimg[i].src = "data/3D/textures/ground" + (i + 1) + ".png";
+				if (HDTextures) {
+					grndimg[i].src = "data/3D/textures/ground" + (i + 1) + "_waifu2x_noise-1_scale_x4.0.png";
+				} else {
+					grndimg[i].src = "data/3D/textures/ground" + (i + 1) + ".png";
+				}
             }
             loadrad3D("data/3D/skydom.r3d", skydom);
             for (var i = 0; i < 3; i++) {
@@ -1851,13 +1875,21 @@ function loaddata() {
                 skyimg[i].onload = function () {
                     dataload += 24;
                 };
-                skyimg[i].src = "data/3D/textures/sky" + (i + 1) + ".png";
+				if (HDTextures) {
+					skyimg[i].src = "data/3D/textures/sky" + (i + 1) + "_waifu2x_noise-1_scale_x4.0.png";
+				} else {
+					skyimg[i].src = "data/3D/textures/sky" + (i + 1) + ".png";
+				}
             }
             haloimg = new Image();
             haloimg.onload = function () {
                 dataload += 5;
             };
-            haloimg.src = "data/3D/textures/halo.png";
+			if (HDTextures) {
+				haloimg.src = "data/3D/textures/halo_waifu2x_noise-1_scale_x4.0.png";
+			} else {
+				haloimg.src = "data/3D/textures/halo.png";
+			}
             loadrad3D("data/3D/tiredisk.r3d", tiredisk);
             loadparticle("data/3D/tire.prt", tire);
             loadparticle("data/3D/tirelow.prt", tirelow);
@@ -1873,14 +1905,22 @@ function loaddata() {
                 cartexture[i].onload = function () {
                     dataload += 9;
                 };
-                cartexture[i].src = "data/3D/textures/car" + i + ".png";
+				if (HDTextures) {
+					cartexture[i].src = "data/3D/textures/car" + i + "_waifu2x_noise-1_scale_x4.0.png";
+				} else {
+					cartexture[i].src = "data/3D/textures/car" + i + ".png";
+				}
             }
             for (var i = 0; i < 19; i++) {
                 tireimg[i] = new Image();
                 tireimg[i].onload = function () {
                     dataload += 2;
                 };
-                tireimg[i].src = "data/3D/textures/t" + i + ".png";
+				if (HDTextures) {
+					tireimg[i].src = "data/3D/textures/t" + i + "_waifu2x_noise-1_scale_x4.0.png";
+				} else {
+					tireimg[i].src = "data/3D/textures/t" + i + ".png";
+				}
             }
             var defb = ["road", "froad", "twister2", "twister1", "turn", "offroad", "bumproad", "offturn", "nroad", "nturn", "roblend", "noblend", "rnblend", "roadend", "offroadend", "hpground", "ramp30", "cramp35", "dramp15", "dhilo15", "slide10", "takeoff", "sramp22", "offbump", "offramp", "sofframp", "halfpipe", "spikes", "rail", "thewall", "checkpoint", "fixpoint", "offcheckpoint", "sideoff", "bsideoff", "uprise", "riseroad", "sroad", "soffroad", "tside", "launchpad", "takeoffb", "speedramp", "offhill", "slider", "uphill", "roll1", "roll2", "roll3", "roll4", "roll5", "roll6", "opile1", "opile2", "aircheckpoint", "tree1", "tree2", "tree3", "tree4", "tree5", "tree6", "tree7", "tree8", "cac1", "cac2", "cac3"];
             for (var i = 0; i < 66; i++) {
@@ -1894,7 +1934,11 @@ function loaddata() {
                 spritexture[i].onload = function () {
                     dataload++;
                 };
-                spritexture[i].src = "data/3D/textures/sp" + i + ".png";
+				if (HDTextures) {
+					spritexture[i].src = "data/3D/textures/sp" + i + "_waifu2x_noise-1_scale_x4.0.png";
+				} else {
+					spritexture[i].src = "data/3D/textures/sp" + i + ".png";
+				}
             }
             loadrad3D("data/3D/fixdisk.r3d", fixdisk);
             loadrad3D("data/3D/elec.r3d", elec);
@@ -3080,7 +3124,7 @@ var td = false;
 var htrns = 0;
 var updateframe = false;
 function gameworks() {
-    var fieldOfView = ((55 * Math.PI) / 180);
+    var fieldOfView = ((FOV * Math.PI) / 180);
     var aspect = (canw / canh);
     var zNear = 0.1;
     var zFar = 7000;
@@ -9317,8 +9361,8 @@ function regn(nr, k, mag, c) {
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rad.texture[1], 0);
             var pixels = null;
             if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-                pixels = new Uint8Array((256 * 256 * 4));
-                gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                pixels = new Uint8Array((textureResolution * textureResolution * 4));
+                gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
                 pixelread = true;
             }
             var tsq = 0,
@@ -9370,8 +9414,8 @@ function regn(nr, k, mag, c) {
                     modpix = 2;
                 }
                 if ((pixelread) && (modpix)) {
-                    var pxc = Math.round(rad.tex[(rad.tri[((i * 3) + 2)] * 2)] * 256);
-                    var pyc = Math.round((1 - rad.tex[((rad.tri[((i * 3) + 2)] * 2) + 1)]) * 256);
+                    var pxc = Math.round(rad.tex[(rad.tri[((i * 3) + 2)] * 2)] * textureResolution);
+                    var pyc = Math.round((1 - rad.tex[((rad.tri[((i * 3) + 2)] * 2) + 1)]) * textureResolution);
                     var cmag = (Math.abs(tmag) * 11 * cd.dammult[car[c].typ] * cd.colrdammult[car[c].typ]);
                     var npt = Math.round(cmag + (Math.random() * cmag));
                     for (var p = 0; p < npt; p++) {
@@ -9397,7 +9441,7 @@ function regn(nr, k, mag, c) {
                             glass = true;
                         }
                         while ((rnp > 0) || (glass)) {
-                            var pp = ((px * 4) + (py * 256 * 4));
+                            var pp = ((px * 4) + (py * textureResolution * 4));
                             if ((pixels[pp] == pixels[pp + 1]) && (pixels[pp + 1] == pixels[pp + 2])) {
                                 pixels[pp] += Math.round((Math.random() * 10) - 5);
                                 if (pixels[pp] < 0) {
@@ -9445,8 +9489,8 @@ function regn(nr, k, mag, c) {
                                         pixels[pp] = ((65 + (pixels[pp] * av)) / (1 + av));
                                         pixels[pp + 1] = ((57 + (pixels[pp + 1] * av)) / (1 + av));
                                         pixels[pp + 2] = ((55 + (pixels[pp + 2] * av)) / (1 + av));
-                                        car[c].ctxl[0] = (px / 256);
-                                        car[c].ctxl[1] = (py / 256);
+                                        car[c].ctxl[0] = (px / textureResolution);
+                                        car[c].ctxl[1] = (py / textureResolution);
                                         if (Math.random() > 0.8) {
                                             if (Math.abs(pxv) < Math.abs(pyv)) {
                                                 pxv += Math.round((Math.random() * 2) - 1);
@@ -9472,7 +9516,7 @@ function regn(nr, k, mag, c) {
             }
             if (pixelread) {
                 gl.bindTexture(gl.TEXTURE_2D, rad.texture[1]);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
                 gl.generateMipmap(gl.TEXTURE_2D);
             }
             gl.deleteFramebuffer(framebuffer);
@@ -9493,15 +9537,15 @@ function burn(c) {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rad.texture[1], 0);
     var pixels = null;
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-        pixels = new Uint8Array((256 * 256 * 4));
-        gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        for (var p = bshft[c]; p < (256 * 256 * 4); p += 12) {
+        pixels = new Uint8Array((textureResolution * textureResolution * 4));
+        gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        for (var p = bshft[c]; p < (textureResolution * textureResolution * 4); p += 12) {
             pixels[p] = (14 + (pixels[p] * 0.6667));
             pixels[p + 1] = (4 + (pixels[p + 1] * 0.6667));
             pixels[p + 2] = (pixels[p + 2] * 0.6667);
         }
         gl.bindTexture(gl.TEXTURE_2D, rad.texture[1]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         gl.generateMipmap(gl.TEXTURE_2D);
     }
     gl.deleteFramebuffer(framebuffer);
@@ -9546,9 +9590,9 @@ function fixcar(c) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rad.texture[1], 0);
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-        var pixels = new Uint8Array((256 * 256 * 4));
-        gl.readPixels(0, 0, 256, 256, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-        for (var p = 0; p < (256 * 256 * 4); p += 4) {
+        var pixels = new Uint8Array((textureResolution * textureResolution * 4));
+        gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        for (var p = 0; p < (textureResolution * textureResolution * 4); p += 4) {
             if ((pixels[p] == 116) && (pixels[p + 1] == 130) && (pixels[p + 2] == 140)) {
                 pixels[p] = skyglass[0];
                 pixels[p + 1] = skyglass[1];
@@ -9557,7 +9601,7 @@ function fixcar(c) {
             }
         }
         gl.bindTexture(gl.TEXTURE_2D, rad.texture[1]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
         gl.generateMipmap(gl.TEXTURE_2D);
     }
     gl.deleteFramebuffer(framebuffer);
