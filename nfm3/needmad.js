@@ -1,10 +1,13 @@
 if (!isSecureContext) alert("NFM will not run outside of secure context!!! please use localhost or a server with HTTPS!!!")
-
 // mtouch = carIsGrounded
+
+/* ----- original modded files by Kirtide, further maddened by dmack6464! ----- */
+
 if (typeof customConfigLoaded === 'undefined') {
 	/* global variables! */
-	var FOV = 80; //default 55 (will always default to 55 on mobile devices!)
+	var FOV = 60; //default 55 (will always default to 55 on mobile devices!)
 	var HDTextures = true;
+	var monoMusic = true;
 	var practiceGame = false;
 	var nfm1 = false;
 	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
@@ -15,12 +18,17 @@ if (typeof customConfigLoaded === 'undefined') {
 	var maxPower = 98; //default 98, modified default is 120
 	var powerPinnedHigh = 200; //default 200, modified is 400
 	var powerPinnedLow = 100; //default 100, modified is 300
-	console.log("this shouldnt load");
 }
 
 //dont interact with these defaults
 handBrakeStunt = false;
 flyingCars = false;
+
+if (monoMusic) {
+	NFMStereoSeparation = 0;
+} else {  //this will require
+	NFMStereoSeparation = 100;
+}
 
 if (requireHandbrakeForStunts == "auto") {
 	if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
@@ -9909,8 +9917,9 @@ var interaud = null;
 var interaudstat = 0;
 var firstinterplay = true;
 function playMainMenuMusic() {
+	window.chiptune.config.stereoSeparation = 0;
 	interaud = window.chiptune.load("data/music/interface.mod");
-	window.chiptune.setVol(0.2)
+	window.chiptune.setVol(0.2);
     try {
         if (interaudstat == 0) {
 
@@ -9924,7 +9933,7 @@ function playMainMenuMusic() {
             }
         }
 		if (mutemusic) {
-			window.chiptune.pause()
+			window.chiptune.pause();
 		}
         firstinterplay = false;
     } catch (e) {}
@@ -9945,7 +9954,7 @@ function playStageMusic() {
         var playedbefore = false;
         if (laststageaud != cp.stage) {
             stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
-			window.chiptune.setVol(0.5)
+			window.chiptune.setVol(0.5);
             stageaud.volume = 1;
             stageaud.loop = true;
             laststageaud = cp.stage;
@@ -9986,7 +9995,7 @@ function pausemusic() {
         window.chiptune.pause();
     }
     if (interaudstat == 1) {
-        window.chiptune.pause()
+        window.chiptune.pause();
     }
 }
 function resumemusic() {
@@ -9994,7 +10003,7 @@ function resumemusic() {
         window.chiptune.unpause();
     }
     if (interaudstat == 1) {
-        window.chiptune.unpause()
+        window.chiptune.unpause();
     }
 }
 var canplaysnd = false;

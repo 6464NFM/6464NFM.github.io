@@ -3,9 +3,9 @@
 	based on: https://deskjet.github.io/chiptune2.js/
 */
 
-const defaultCfg = {
+const defaultCfg = { //NFMStereoSeparation may not be defined!?!? if i check typeof its always undefined, but i can use it just fine!?!?!?! im losihng my minddd.... im becomone one with the madnesssss,...
 	repeatCount: -1,		// -1 = play endless, 0 = play once, do not repeat
-	stereoSeparation: 100,	// percents
+	stereoSeparation: NFMStereoSeparation,	// percents (default 100)
 	interpolationFilter: 0,	// https://lib.openmpt.org/doc/group__openmpt__module__render__param.html
 	context: false,
 }
