@@ -9963,11 +9963,13 @@ function playStageMusic() {
         if (laststageaud != cp.stage) {
             //stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
 			stageaud = window.chiptune.load("data/music/" + stageSoundTrackName);
+			window.chiptune.pause();
 			setTimeout(function(){ //for some reason this doesnt work if its not delayed for a fraction of a second
 				window.chiptune.setVol(stageSoundTrackVolume);
 				window.chiptune.setTempo(stageSoundTrackTempo);
 				window.chiptune.setPitch(stageSoundTrackPitch);
-			}, 50);
+				window.chiptune.unpause();
+			}, 200);
             stageaud.volume = 1;
             stageaud.loop = true;
             laststageaud = cp.stage;
