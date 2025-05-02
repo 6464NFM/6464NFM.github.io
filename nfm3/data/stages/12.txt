@@ -1,6 +1,11 @@
 
 name(The King's Puppetmaster)
 
+soundtrack-name(stage12.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(20,-10,-20)
 sky(121, 141, 252)
 fog(227,166,147)

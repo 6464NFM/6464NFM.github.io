@@ -1,6 +1,11 @@
 
 name(The Radical Monster Dance)
 
+soundtrack-name(stage15.mod)
+soundtrack-volume(0.7)
+soundtrack-tempo(1.02)
+soundtrack-pitch(1.02)
+
 snap(20,10,-25)
 sky(105,180,255)
 fog(221,161,141)

@@ -1,6 +1,11 @@
 
 name(The Mad Party)
 
+soundtrack-name(stage17.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(20,-30,-60)
 sky(153,202,255)
 fog(220,223,200)

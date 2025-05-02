@@ -1,6 +1,11 @@
 
 name(Introductory Stage)
 
+soundtrack-name(stage1.mod)
+soundtrack-volume(1.0)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.05)
+
 snap(10,0,-10)
 sky(120,180,255)
 fog(170,190,210)

@@ -1,6 +1,11 @@
 
 name(The Dream is Real)
 
+soundtrack-name(stage2.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(25,0,0)
 sky(112,191,255)
 fog(255,183,138)

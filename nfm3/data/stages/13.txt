@@ -1,6 +1,11 @@
 
 name(The Joker's Planet)
 
+soundtrack-name(stage13.mod)
+soundtrack-volume(0.6)
+soundtrack-tempo(0.9)
+soundtrack-pitch(0.9)
+
 snap(15,0,10)
 sky(106,252,233)
 fog(255,173,102)

@@ -19,16 +19,12 @@ if (typeof customConfigLoaded === 'undefined') {
 	var powerPinnedHigh = 200; //default 200, modified is 400
 	var powerPinnedLow = 100; //default 100, modified is 300
 }
+loadTheMusic(); //defined in madloader, should only be run when monoMusic is defined!
 
 //dont interact with these defaults
 handBrakeStunt = false;
 flyingCars = false;
-
-if (monoMusic) {
-	NFMStereoSeparation = 0;
-} else {  //this will require
-	NFMStereoSeparation = 100;
-}
+currentTime = 0;
 
 if (requireHandbrakeForStunts == "auto") {
 	if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
@@ -2225,6 +2221,18 @@ function loadstage() {
                     }
                     if (strtsWith(line, "addon")) {
                         adod = getIntValue("addon", line, 0);
+                    }
+					if (strtsWith(line, "soundtrack-name")) {
+                        stageSoundTrackName = getStringValue("soundtrack-name", line, 0);
+                    }
+					if (strtsWith(line, "soundtrack-volume")) {
+						stageSoundTrackVolume = getFloatValue("soundtrack-volume", line, 0);
+                    }
+					if (strtsWith(line, "soundtrack-tempo")) {
+						stageSoundTrackTempo = getFloatValue("soundtrack-tempo", line, 0);
+                    }
+					if (strtsWith(line, "soundtrack-pitch")) {
+						stageSoundTrackPitch = getFloatValue("soundtrack-pitch", line, 0);
                     }
                     if (strtsWith(line, "snap")) {
                         snap[0] = (getIntValue("snap", line, 0) / 100);
@@ -9953,8 +9961,13 @@ function playStageMusic() {
     try {
         var playedbefore = false;
         if (laststageaud != cp.stage) {
-            stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
-			window.chiptune.setVol(0.5);
+            //stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
+			stageaud = window.chiptune.load("data/music/" + stageSoundTrackName);
+			setTimeout(function(){ //for some reason this doesnt work if its not delayed for a fraction of a second
+				window.chiptune.setVol(stageSoundTrackVolume);
+				window.chiptune.setTempo(stageSoundTrackTempo);
+				window.chiptune.setPitch(stageSoundTrackPitch);
+			}, 50);
             stageaud.volume = 1;
             stageaud.loop = true;
             laststageaud = cp.stage;
@@ -11531,21 +11544,21 @@ function drawinter() {
         winner = true;
     }
     if (!holdit) {
-        if ((dest[0]) && (cntwis == 30)) {
+        if ((dest[0]) && (cntwis == 16)) {
             drawcs(132, "You're Wasted!", 0, 0, 0, 3);
             holdit = true;
             winner = false;
         }
     }
-    if ((cntdest[0] != 0) && (cntwis < 30)) {
+    if ((cntdest[0] != 0) && (cntwis < 16)) {
         cntwis++;
         if (cntwis == 1) {
             playsnd("wasted", 1);
         }
-		if (cntwis == 25) {
+		if (cntwis == 13) {
             playsnd("wasted", 1);
         }
-        if (cntwis == 30) {
+        if (cntwis == 15) {
             playsnd("firewasted", 1);
         }
     }

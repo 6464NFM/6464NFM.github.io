@@ -1,6 +1,11 @@
 
 name(The Jump Run)
 
+soundtrack-name(stage14.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(0,20,-10)
 sky(110,163,255)
 fog(138,219,213)

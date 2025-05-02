@@ -1,10 +1,15 @@
 
-name(Skyline Rail)
+name(Skyline Radicals)
 
-snap(0,20,0)
-sky(107,181,255)
-fog(255,210,166)
-clouds(255,255,255,1)
+soundtrack-name(blaze_of_glory.mod)
+soundtrack-volume(0.6)
+soundtrack-tempo(0.92)
+soundtrack-pitch(0.92)
+
+snap(-70,-70,10)
+sky(107,181,200)
+fog(0,50,100)
+clouds(0,200,200,1)
 ground(193,181,159,2,0.4,0.2) //ground(r,g,b,textureNum,addedHueChangeFactor,addedSatChangeFactor)
 lightswingZ(-10)
 distfog(11700)
@@ -17,7 +22,7 @@ tip(is to bump him face on when he comes around out of the
 tip(checkpoint during a 180 turn!)
 
 
-nlaps(2)
+nlaps(4)
 
 set(48,0,0,0)p
 set(44,0,5600,180)p

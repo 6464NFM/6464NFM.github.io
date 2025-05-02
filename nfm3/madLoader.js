@@ -15,3 +15,14 @@ if (typeof whatConfig != 'undefined') {
 	script_tag.src = "needmad.js";
 	document.head.appendChild(script_tag);
 }
+function loadTheMusic() {
+		var script_tag = document.createElement('script');
+		script_tag.type = 'module';
+		script_tag.crossorigin = 'use-credentials';
+		if (monoMusic) {
+			script_tag.text = "import {ChiptuneJsPlayer} from './chiptune3-MonoOutput.js'; window.chiptune = new ChiptuneJsPlayer();";
+		} else {
+			script_tag.text = "import {ChiptuneJsPlayer} from './chiptune3.js'; window.chiptune = new ChiptuneJsPlayer();";
+		}
+		document.head.appendChild(script_tag);
+}

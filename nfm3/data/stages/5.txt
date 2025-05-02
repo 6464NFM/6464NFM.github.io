@@ -1,6 +1,11 @@
 
 name(Off the Deep End)
 
+soundtrack-name(stage5.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(-10,20,10)
 sky(110,197,255)
 fog(252,173,116)

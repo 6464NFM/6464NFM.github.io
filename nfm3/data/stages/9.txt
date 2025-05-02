@@ -1,6 +1,11 @@
 
 name(Long Live the King)
 
+soundtrack-name(stage9.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(20,-5,5)
 sky(137,226,255)
 fog(255,138,148)

@@ -1,5 +1,10 @@
 
 name(He Is Coming For You In 5-10 Business Days)
+
+soundtrack-name(stage7.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
  
 snap(20,5,-20)
 sky(125,170,255)

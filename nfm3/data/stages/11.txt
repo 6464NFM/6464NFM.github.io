@@ -1,6 +1,11 @@
 
 name(Rolling Dark)
 
+soundtrack-name(stage11.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(-25,-5,15)
 sky(109,137,252)
 fog(117,223,255)

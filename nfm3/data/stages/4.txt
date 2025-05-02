@@ -1,6 +1,11 @@
 
 name(Revenge... Served Burning Hot!)
 
+soundtrack-name(stage4.mod)
+soundtrack-volume(0.5)
+soundtrack-tempo(1.0)
+soundtrack-pitch(1.0)
+
 snap(15,15,-20)
 sky(122,166,255)
 fog(195,210,170)
