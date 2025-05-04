@@ -1,10 +1,10 @@
 
 name(Rolling Dark)
 
-soundtrack-name(stage11.mod)
-soundtrack-volume(0.5)
-soundtrack-tempo(1.0)
-soundtrack-pitch(1.0)
+soundtrack-name(blaze_of_glory.mod)
+soundtrack-volume(0.6)
+soundtrack-tempo(0.92)
+soundtrack-pitch(1.1)
 
 snap(-25,-5,15)
 sky(109,137,252)

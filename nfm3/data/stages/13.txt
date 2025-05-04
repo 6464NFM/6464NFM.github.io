@@ -15,7 +15,7 @@ lightswingX(-10)
 distfog(11700)
 addon(3)
 
-nlaps(2)
+nlaps(3)
 
 tip(This is quite a tricky stage if you plan to race it; and you can)
 tip(complete it by racing or wasting.)

@@ -2,7 +2,7 @@ var customConfigLoaded = true;
 
 var FOV = 70; //default 55 (will always default to 55 on mobile devices!)
 var HDTextures = true;
-var monoMusic = true;
+var monoMusic = false;
 var practiceGame = true;
 var nfm1 = false;
 var carsCanFly = false; //launch your car off a jump and hit shift + spacebar

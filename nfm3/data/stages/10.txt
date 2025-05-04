@@ -1,10 +1,10 @@
 
 name(Skyline Radicals)
 
-soundtrack-name(blaze_of_glory.mod)
-soundtrack-volume(0.6)
-soundtrack-tempo(0.92)
-soundtrack-pitch(0.92)
+soundtrack-name(stage11.mod)
+soundtrack-volume(0.7)
+soundtrack-tempo(1.15)
+soundtrack-pitch(0.85)
 
 snap(-70,-70,10)
 sky(107,181,200)

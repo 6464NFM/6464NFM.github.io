@@ -7,7 +7,7 @@ if (typeof customConfigLoaded === 'undefined') {
 	/* global variables! */
 	var FOV = 60; //default 55 (will always default to 55 on mobile devices!)
 	var HDTextures = true;
-	var monoMusic = true;
+	var monoMusic = false;
 	var practiceGame = false;
 	var nfm1 = false;
 	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
@@ -25,6 +25,40 @@ loadTheMusic(); //defined in madloader, should only be run when monoMusic is def
 handBrakeStunt = false;
 flyingCars = false;
 currentTime = 0;
+chiptuneTimerCurrentCheck = 0;
+chiptuneTimerPreviousCheck = 0;
+firstTimeCheck = true;
+
+function checkAndApplyMusicEffects() { //this is better than just wrapping applyMusicSettings in an arbitrary timeout,
+	getMusicTime()                     //it can take up to a few seconds for a soundtrack to load... suggestions welcome!
+	if (chiptuneTimerPreviousCheck != chiptuneTimerCurrentCheck) {
+		//console.log("time changed! will apply effects in 100", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
+		setTimeout("applyMusicSettings()", 100);
+		firstTimeCheck = true;
+	} else {
+		//console.log("time did not change");
+		setTimeout("checkAndApplyMusicEffects()", 0); // js equivalent of "goto top"
+	}
+}
+function getMusicTime() {
+	if (firstTimeCheck) {
+		chiptuneTimerCurrentCheck = chiptune.getCurrentTime();
+		chiptuneTimerPreviousCheck = chiptuneTimerCurrentCheck; //make sure theyre the same so the loop continues
+		firstTimeCheck = false;
+		//console.log("first run", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
+	}
+	chiptuneTimerCurrentCheck = chiptuneTimerPreviousCheck;
+	chiptuneTimerCurrentCheck = chiptune.getCurrentTime();
+	//console.log("not first", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
+}
+
+function applyMusicSettings() {
+	window.chiptune.setPos(0);
+	window.chiptune.setVol(stageSoundTrackVolume);
+	window.chiptune.setTempo(stageSoundTrackTempo);
+	window.chiptune.setPitch(stageSoundTrackPitch);
+}
+				
 
 if (requireHandbrakeForStunts == "auto") {
 	if ("ontouchstart" in document.documentElement) {//this is the same check isphone uses
@@ -9895,13 +9929,13 @@ function gameloop() {
         }
     }
     var date = new Date();
-    var ctime = date.getTime();
+    var chiptuneTimerCurrentCheck = date.getTime();
     if (ltime == -1) {
         totime = 20;
     } else {
-        totime += (ctime - ltime);
+        totime += (chiptuneTimerCurrentCheck - ltime);
     }
-    ltime = ctime;
+    ltime = chiptuneTimerCurrentCheck;
     nfr++;
     if (nfr == 5) {
         if (totime > (250 * m)) {
@@ -9963,13 +9997,7 @@ function playStageMusic() {
         if (laststageaud != cp.stage) {
             //stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
 			stageaud = window.chiptune.load("data/music/" + stageSoundTrackName);
-			window.chiptune.pause();
-			setTimeout(function(){ //for some reason this doesnt work if its not delayed for a fraction of a second
-				window.chiptune.setVol(stageSoundTrackVolume);
-				window.chiptune.setTempo(stageSoundTrackTempo);
-				window.chiptune.setPitch(stageSoundTrackPitch);
-				window.chiptune.unpause();
-			}, 200);
+			checkAndApplyMusicEffects();
             stageaud.volume = 1;
             stageaud.loop = true;
             laststageaud = cp.stage;
@@ -13524,6 +13552,7 @@ function drawloading() {
     rd.letterSpacing = "1px";
     rd.textAlign = "center";
     rd.fillText("Crazy? I was crazy once... They put me in your walls!!!!", (640 * mw), (250 * mh));
+	rd.fillText("[Remember to clear your cache after updates!]", (640 * mw), (380 * mh));
     rd.font = "" + (30 * avm) + "px verd";
     rd.textBaseline = "middle";
     rd.letterSpacing = "0px";
