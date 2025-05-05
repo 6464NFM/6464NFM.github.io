@@ -1,9 +1,9 @@
 
 name(Revenge... Served Burning Hot!)
 
-soundtrack-name(stage4.mod)
+soundtrack-name(noggins_nokkin_stik.mod)
 soundtrack-volume(0.6)
-soundtrack-tempo(0.9)
+soundtrack-tempo(0.95)
 soundtrack-pitch(0.8)
 
 snap(15,15,-20)

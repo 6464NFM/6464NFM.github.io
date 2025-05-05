@@ -1,10 +1,10 @@
 
 name(Flight of The Cognitively Deranged)
 
-soundtrack-name(stage8.mod)
-soundtrack-volume(0.5)
-soundtrack-tempo(1.0)
-soundtrack-pitch(1.0)
+soundtrack-name(visionsofunreality.xm)
+soundtrack-volume(0.8)
+soundtrack-tempo(1.1)
+soundtrack-pitch(0.8)
 
 snap(-15,25,25)
 sky(137,226,255)

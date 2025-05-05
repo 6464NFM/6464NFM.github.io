@@ -1,7 +1,7 @@
 
 name(The King's Puppetmaster)
 
-soundtrack-name(stage12.mod)
+soundtrack-name(rise_up.mod)
 soundtrack-volume(0.7)
 soundtrack-tempo(0.95)
 soundtrack-pitch(1.05)

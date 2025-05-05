@@ -1,7 +1,7 @@
 
 name(The Joker's Planet)
 
-soundtrack-name(stage13.mod)
+soundtrack-name(planet-e.mod)
 soundtrack-volume(0.6)
 soundtrack-tempo(0.9)
 soundtrack-pitch(0.9)

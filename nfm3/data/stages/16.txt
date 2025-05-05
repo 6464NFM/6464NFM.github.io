@@ -1,7 +1,7 @@
 
 name(Lost in 4D Again)
 
-soundtrack-name(stage16.mod)
+soundtrack-name(gumdrops.mod)
 soundtrack-volume(0.6)
 soundtrack-tempo(1.1)
 soundtrack-pitch(1.1)

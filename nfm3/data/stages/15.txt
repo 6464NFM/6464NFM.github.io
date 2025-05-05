@@ -1,7 +1,7 @@
 
 name(The Radical Monster Dance)
 
-soundtrack-name(stage15.mod)
+soundtrack-name(danger_dome.mod)
 soundtrack-volume(0.7)
 soundtrack-tempo(1.02)
 soundtrack-pitch(1.02)

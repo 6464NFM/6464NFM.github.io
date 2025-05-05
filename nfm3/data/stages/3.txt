@@ -1,8 +1,8 @@
 
 name(the Law vs. the Lawless)
 
-soundtrack-name(stage3.mod)
-soundtrack-volume(0.5)
+soundtrack-name(Outlaw_Memories.mod)
+soundtrack-volume(0.7)
 soundtrack-tempo(1.1)
 soundtrack-pitch(0.8)
 

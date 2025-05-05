@@ -111,6 +111,7 @@ export class ChiptuneJsPlayer {
 		fetch(url)
 		.then(response => response.arrayBuffer())
 		.then(arrayBuffer => this.play(arrayBuffer))
+		.then(arrayBuffer => onChipTuneLoaded())
 		.catch(e=>{this.fireEvent('onError', {type: 'Load'})})
 	}
 	play(val) { this.postMsg('play', val) }

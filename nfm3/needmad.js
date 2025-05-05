@@ -29,34 +29,13 @@ chiptuneTimerCurrentCheck = 0;
 chiptuneTimerPreviousCheck = 0;
 firstTimeCheck = true;
 
-function checkAndApplyMusicEffects() { //this is better than just wrapping applyMusicSettings in an arbitrary timeout,
-	getMusicTime()                     //it can take up to a few seconds for a soundtrack to load... suggestions welcome!
-	if (chiptuneTimerPreviousCheck != chiptuneTimerCurrentCheck) {
-		//console.log("time changed! will apply effects in 100", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
-		setTimeout("applyMusicSettings()", 100);
-		firstTimeCheck = true;
-	} else {
-		//console.log("time did not change");
-		setTimeout("checkAndApplyMusicEffects()", 0); // js equivalent of "goto top"
+function onChipTuneLoaded() { //this function is a callback modded into chiptune3 / (mono-output), apparently it lacks
+	if (stageMusicPlaying) {  //a callback function when the music is ready to play...
+		//console.log("loaded!");
+		window.chiptune.setVol(stageSoundTrackVolume); //this is all wayyyyy less scuffed than the horrific solution
+		window.chiptune.setTempo(stageSoundTrackTempo);//i was cooking up....
+		window.chiptune.setPitch(stageSoundTrackPitch);
 	}
-}
-function getMusicTime() {
-	if (firstTimeCheck) {
-		chiptuneTimerCurrentCheck = chiptune.getCurrentTime();
-		chiptuneTimerPreviousCheck = chiptuneTimerCurrentCheck; //make sure theyre the same so the loop continues
-		firstTimeCheck = false;
-		//console.log("first run", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
-	}
-	chiptuneTimerCurrentCheck = chiptuneTimerPreviousCheck;
-	chiptuneTimerCurrentCheck = chiptune.getCurrentTime();
-	//console.log("not first", chiptuneTimerPreviousCheck, chiptuneTimerCurrentCheck);
-}
-
-function applyMusicSettings() {
-	window.chiptune.setPos(0);
-	window.chiptune.setVol(stageSoundTrackVolume);
-	window.chiptune.setTempo(stageSoundTrackTempo);
-	window.chiptune.setPitch(stageSoundTrackPitch);
 }
 				
 
@@ -9959,6 +9938,7 @@ var interaud = null;
 var interaudstat = 0;
 var firstinterplay = true;
 function playMainMenuMusic() {
+	stageMusicPlaying = false;
 	window.chiptune.config.stereoSeparation = 0;
 	interaud = window.chiptune.load("data/music/interface.mod");
 	window.chiptune.setVol(0.2);
@@ -9992,12 +9972,12 @@ var stageaudstat = 0;
 var laststageaud = -1;
 
 function playStageMusic() {
+	stageMusicPlaying = true;
     try {
         var playedbefore = false;
         if (laststageaud != cp.stage) {
             //stageaud = window.chiptune.load("data/music/stage" + cp.stage + ".mod");
 			stageaud = window.chiptune.load("data/music/" + stageSoundTrackName);
-			checkAndApplyMusicEffects();
             stageaud.volume = 1;
             stageaud.loop = true;
             laststageaud = cp.stage;

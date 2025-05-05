@@ -1,9 +1,9 @@
 
 name(He Is Coming For You In 5-10 Business Days)
 
-soundtrack-name(stage7.mod)
+soundtrack-name(canyon_flight.mod)
 soundtrack-volume(0.8)
-soundtrack-tempo(0.9)
+soundtrack-tempo(1.0)
 soundtrack-pitch(0.96)
  
 snap(20,5,-20)
