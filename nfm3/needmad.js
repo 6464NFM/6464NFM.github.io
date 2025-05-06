@@ -20,12 +20,13 @@ if (typeof customConfigLoaded === 'undefined') {
 	var powerPinnedLow = 100; //default 100, modified is 300
 }
 loadTheMusic(); //defined in madloader, should only be run when monoMusic is defined!
+init();
 
 //dont interact with these defaults
 handBrakeStunt = false;
 flyingCars = false;
 currentTime = 0;
-chiptuneTimerCurrentCheck = 0;
+ctime = 0;
 chiptuneTimerPreviousCheck = 0;
 firstTimeCheck = true;
 
@@ -36,6 +37,11 @@ function onChipTuneLoaded() { //this function is a callback modded into chiptune
 		window.chiptune.setTempo(stageSoundTrackTempo);//i was cooking up....
 		window.chiptune.setPitch(stageSoundTrackPitch);
 	}
+}
+
+function pulseSky() { //does nothing right now, potential experiements in the future?
+	stageSky = [0,0,0];
+	skytexture(stageSky, stageFog, stageClouds, stageCloudsType);
 }
 				
 
@@ -1858,7 +1864,7 @@ function loadconfe() {
 }
 var reqload = false;
 var dataload = 0;
-var pokiready = false;
+//var pokiready = false;
 var datacnt = 3275;
 if (isphone) {
     datacnt = 3243;
@@ -2112,7 +2118,8 @@ function loaddata() {
             dataload += 309;
             bg3D.loaded++;
         }
-        if ((dataload == datacnt) && (pokiready)) {
+        //if ((dataload == datacnt) && (pokiready)) {
+		if (dataload == datacnt) {
 			//
 			//removed this, perhaps a skymad leftover?
             cartextures();
@@ -2256,17 +2263,21 @@ function loadstage() {
                         skyc[0] = getIntValue("sky", line, 0);
                         skyc[1] = getIntValue("sky", line, 1);
                         skyc[2] = getIntValue("sky", line, 2);
+						stageSky = [skyc[0],skyc[1],skyc[2]];
                     }
                     if (strtsWith(line, "fog")) {
                         fogc[0] = getIntValue("fog", line, 0);
                         fogc[1] = getIntValue("fog", line, 1);
                         fogc[2] = getIntValue("fog", line, 2);
+						stageFog = [fogc[0],fogc[1],fogc[2]];
                     }
                     if (strtsWith(line, "clouds")) {
                         cloudsc[0] = getIntValue("clouds", line, 0);
                         cloudsc[1] = getIntValue("clouds", line, 1);
                         cloudsc[2] = getIntValue("clouds", line, 2);
+						stageClouds = [cloudsc[0],cloudsc[1],cloudsc[2]];
                         cloudtyp = getIntValue("clouds", line, 3);
+						stageCloudsType = cloudtyp;
                     }
                     if (strtsWith(line, "ground")) {
                         groundtexture(getIntValue("ground", line, 3), getIntValue("ground", line, 0), getIntValue("ground", line, 1), getIntValue("ground", line, 2), getFloatValue("ground", line, 4), getFloatValue("ground", line, 5));
@@ -9908,13 +9919,13 @@ function gameloop() {
         }
     }
     var date = new Date();
-    var chiptuneTimerCurrentCheck = date.getTime();
+    var ctime = date.getTime();
     if (ltime == -1) {
         totime = 20;
     } else {
-        totime += (chiptuneTimerCurrentCheck - ltime);
+        totime += (ctime - ltime);
     }
-    ltime = chiptuneTimerCurrentCheck;
+    ltime = ctime;
     nfr++;
     if (nfr == 5) {
         if (totime > (250 * m)) {

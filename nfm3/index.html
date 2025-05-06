@@ -34,14 +34,14 @@
     <link rel="canonical" href="https://www.crazygames.com/game/need-for-madness">
 	<script type="text/javascript" src="libopenmpt.js"></script>
   </head>
-  <body onload="init()" bgcolor="#15190D" link="#D3F2FF" alink="#D3F2FF" vlink="#D3F2FF" leftmargin="0" topmargin="0" margin="0" marginheight="0" marginwidth="0">
+  <body bgcolor="#15190D" link="#D3F2FF" alink="#D3F2FF" vlink="#D3F2FF" leftmargin="0" topmargin="0" margin="0" marginheight="0" marginwidth="0">
     <table id="loading" style="position: absolute; left: 0px; top: 0px; width: 100%; height: 100%">
       <tbody>
         <tr>
           <td valign="center" align="center">
             <span style="font-family:Verdana, Arial; font-size:14px;">
               <font color="#6DCA00">
-                <b>Loading, please wait...</b>
+                <b>Interact with me to start loading!</b>
               </font>
             </span>
           </td>
@@ -76,6 +76,7 @@
       }
 
       function msdown(evt) {
+	  onPageInteraction();
         var rect = canvas2D.getBoundingClientRect();
         xm[0] = (evt.clientX - rect.left);
         ym[0] = (evt.clientY - rect.top);
@@ -100,6 +101,7 @@
       }
 
       function frdown(evt) {
+	  onPageInteraction();
         evt.preventDefault();
         var rect = canvas2D.getBoundingClientRect();
         nms = 0;
@@ -133,6 +135,7 @@
       var pbr = 1;
 
       function Keydown(evt) {
+		onPageInteraction();
         evt.preventDefault();
         var k = evt.keyCode;
         if (k == 38 || k == 87) {
