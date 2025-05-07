@@ -1,9 +1,9 @@
 
 name(Long Live the King)
 
-soundtrack-name(stage9.mod)
-soundtrack-volume(0.5)
-soundtrack-tempo(1.0)
+soundtrack-name(Another holiday.MOD)
+soundtrack-volume(0.65)
+soundtrack-tempo(0.9)
 soundtrack-pitch(1.0)
 
 snap(20,-5,5)

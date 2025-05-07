@@ -4,7 +4,7 @@ name(The Jump Run)
 soundtrack-name(keep_up_the_steam.mod)
 soundtrack-volume(0.8)
 soundtrack-tempo(1.2)
-soundtrack-pitch(1.0)
+soundtrack-pitch(1.1)
 
 snap(0,20,-10)
 sky(110,163,255)

@@ -36,6 +36,8 @@ function onChipTuneLoaded() { //this function is a callback modded into chiptune
 		window.chiptune.setVol(stageSoundTrackVolume); //this is all wayyyyy less scuffed than the horrific solution
 		window.chiptune.setTempo(stageSoundTrackTempo);//i was cooking up....
 		window.chiptune.setPitch(stageSoundTrackPitch);
+	} else {
+		window.chiptune.setVol(0.1);
 	}
 }
 
@@ -9951,8 +9953,7 @@ var firstinterplay = true;
 function playMainMenuMusic() {
 	stageMusicPlaying = false;
 	window.chiptune.config.stereoSeparation = 0;
-	interaud = window.chiptune.load("data/music/interface.mod");
-	window.chiptune.setVol(0.2);
+	interaud = window.chiptune.load("data/music/rocka_och_runka.mod");
     try {
         if (interaudstat == 0) {
 
@@ -12170,7 +12171,7 @@ function drawinter() {
                     if (power[im] != maxPower) {
                         say = "Power up " + Math.floor(100 * powerup[im] / 98) + "%";
                     } else {
-                        say = "Power to the MAX";
+                        say = "Power To The MAX";
                     }
                 }
             }

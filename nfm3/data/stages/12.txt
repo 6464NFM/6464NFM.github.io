@@ -3,7 +3,7 @@ name(The King's Puppetmaster)
 
 soundtrack-name(rise_up.mod)
 soundtrack-volume(0.7)
-soundtrack-tempo(0.95)
+soundtrack-tempo(0.98)
 soundtrack-pitch(1.05)
 
 snap(20,-10,-20)

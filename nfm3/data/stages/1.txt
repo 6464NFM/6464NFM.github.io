@@ -14,7 +14,7 @@ ground(189,175,145,2,-0.1,0.7) //ground(r,g,b,textureNum,addedHueChangeFactor,ad
 distfog(10000)
 addon(1)
 
-nlaps(2)
+nlaps(3)
 
 set(47,0,0,0)p
 set(10,0,5600,180)p

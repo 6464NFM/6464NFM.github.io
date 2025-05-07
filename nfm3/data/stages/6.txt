@@ -1,10 +1,10 @@
 
-name(The Blue Oval of Madness)
+name(The Oval of Madness)
 
-soundtrack-name(stage6.mod)
-soundtrack-volume(0.5)
-soundtrack-tempo(1.0)
-soundtrack-pitch(1.0)
+soundtrack-name(stormrider.mod)
+soundtrack-volume(1.0)
+soundtrack-tempo(1.1)
+soundtrack-pitch(0.8)
 
 snap(20,0,20)
 sky(97,107,255)
@@ -19,7 +19,7 @@ tip(This stage is purely a racing stage; take a fast car and try)
 tip(to keep your power always up while avoiding bad landings to)
 tip(keep up with the rest. Let's go!)
 
-nlaps(2)
+nlaps(4)
 
 set(48,0,0,0)p
 set(15,0,5600,0)p
