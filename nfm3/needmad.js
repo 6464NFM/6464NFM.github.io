@@ -23,6 +23,8 @@ loadTheMusic(); //defined in madloader, should only be run when monoMusic is def
 init();
 
 //dont interact with these defaults
+animateCrashes = false;
+carSelectSmoke = false;
 handBrakeStunt = false;
 flyingCars = false;
 currentTime = 0;
@@ -3513,62 +3515,69 @@ function carselect() {
     cmat = mat4.create();
     mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
     camx = 0;
-    camy = 0;
+    camy = 8;
     camz = 0;
     camxz = 0;
-    camzy = -8;
+    camzy = 10;
     bg3D.x = 0;
-    bg3D.y = 24;
+    bg3D.y = -10;
     bg3D.z = -99;
     bg3D.mat = mat4.create();
     mat4.rotate(bg3D.mat, bg3D.mat, (camzy * (Math.PI / 180)), [-1, 0, 0]);
-    for (var i = 0; i < 9; i++) {
-        smoke[i].mat = mat4.create();
-        smoke[i].x += smoke[i].sx;
-        if ((smoke[i].sx < 0) && (smoke[i].x < -60)) {
-            smoke[i].sx = (0.05 + (Math.random() * 0.3));
-            smoke[i].rota = (1 + (3 * Math.random()));
-            if (Math.random() > Math.random()) {
-                smoke[i].rota *= -1;
+	if (carSelectSmoke) {
+		for (var i = 0; i < 9; i++) {
+            smoke[i].mat = mat4.create();
+            smoke[i].x += smoke[i].sx;
+            if ((smoke[i].sx < 0) && (smoke[i].x < -60)) {
+                smoke[i].sx = (0.05 + (Math.random() * 0.3));
+                smoke[i].rota = (1 + (3 * Math.random()));
+                if (Math.random() > Math.random()) {
+                    smoke[i].rota *= -1;
+                }
             }
-        }
-        if ((smoke[i].sx > 0) && (smoke[i].x > 60)) {
-            smoke[i].sx =  - (0.05 + (Math.random() * 0.3));
-            smoke[i].rota = (1 + (3 * Math.random()));
-            if (Math.random() > Math.random()) {
-                smoke[i].rota *= -1;
+            if ((smoke[i].sx > 0) && (smoke[i].x > 60)) {
+                smoke[i].sx =  - (0.05 + (Math.random() * 0.3));
+                smoke[i].rota = (1 + (3 * Math.random()));
+                if (Math.random() > Math.random()) {
+                    smoke[i].rota *= -1;
+                }
             }
-        }
-        smoke[i].y += smoke[i].sy;
-        if ((smoke[i].sy < 0) && (smoke[i].y < 3)) {
-            smoke[i].sy = (0.1 + (Math.random() * 0.4));
-            smoke[i].rota = (1 + (3 * Math.random()));
-            if (Math.random() > Math.random()) {
-                smoke[i].rota *= -1;
+            smoke[i].y += smoke[i].sy;
+            if ((smoke[i].sy < 0) && (smoke[i].y < 3)) {
+                smoke[i].sy = (0.1 + (Math.random() * 0.4));
+                smoke[i].rota = (1 + (3 * Math.random()));
+                if (Math.random() > Math.random()) {
+                    smoke[i].rota *= -1;
+                }
             }
-        }
-        if ((smoke[i].sy > 0) && (smoke[i].y > 55)) {
-            smoke[i].sy =  - (0.1 + (Math.random() * 0.4));
-            smoke[i].rota = (1 + (3 * Math.random()));
-            if (Math.random() > Math.random()) {
-                smoke[i].rota *= -1;
+            if ((smoke[i].sy > 0) && (smoke[i].y > 55)) {
+                smoke[i].sy =  - (0.1 + (Math.random() * 0.4));
+                smoke[i].rota = (1 + (3 * Math.random()));
+                if (Math.random() > Math.random()) {
+                    smoke[i].rota *= -1;
+                }
             }
-        }
-        smoke[i].z = -99;
-        for (var k = 0; k < 3; k++) {
-            smoke[i].mat[k] = (bg3D.mat[k] * 4);
-            smoke[i].mat[(k + 4)] = (bg3D.mat[(k + 4)] * 4);
-            smoke[i].mat[(k + 8)] = (bg3D.mat[(k + 8)] * 4);
-        }
-        mat4.rotate(smoke[i].mat, smoke[i].mat, (smoke[i].rot * (Math.PI / 180)), [0, 0, 1]);
-        smoke[i].rot += smoke[i].rota;
-        if (smoke[i].rot > 360) {
-            smoke[i].rot -= 360;
-        }
-        if (smoke[i].rot < 0) {
-            smoke[i].rot += 360;
-        }
-    }
+            smoke[i].z = -99;
+            for (var k = 0; k < 3; k++) {
+                smoke[i].mat[k] = (bg3D.mat[k] * 4);
+                smoke[i].mat[(k + 4)] = (bg3D.mat[(k + 4)] * 4);
+                smoke[i].mat[(k + 8)] = (bg3D.mat[(k + 8)] * 4);
+            }
+            mat4.rotate(smoke[i].mat, smoke[i].mat, (smoke[i].rot * (Math.PI / 180)), [0, 0, 1]);
+            smoke[i].rot += smoke[i].rota;
+            if (smoke[i].rot > 360) {
+                smoke[i].rot -= 360;
+            }
+            if (smoke[i].rot < 0) {
+                smoke[i].rot += 360;
+            }
+		}
+    } else {
+		for (var i = 0; i < 9; i++) {
+            smoke[i].mat = mat4.create();
+            smoke[i].x += smoke[i].sx;
+		}
+	}
     if (flyout == 0) {
         if (carup >= 1) {
             if (carup == 1) {
@@ -3647,7 +3656,7 @@ function carselect() {
     carobj[sel[0]].y = (wly[sel[0]][1] + (1.5 * wlh[sel[0]][1]) + carmy);
     carobj[sel[0]].z = -98;
     carobj[sel[0]].ont = 0;
-    csxz += 5;
+    csxz -= 4.5; // car select rotation speed
     if (csxz > 360) {
         csxz -= 360;
     }
@@ -9391,15 +9400,17 @@ function regn(nr, k, mag, c) {
                 rad.iscar = 2;
             }
             var pixelread = false;
-            var framebuffer = gl.createFramebuffer();
-            gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rad.texture[1], 0);
-            var pixels = null;
-            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
-                pixels = new Uint8Array((textureResolution * textureResolution * 4));
-                gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-                pixelread = true;
-            }
+			if (animateCrashes) {
+				var framebuffer = gl.createFramebuffer();
+				gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+				gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, rad.texture[1], 0);
+				var pixels = null;
+				if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) == gl.FRAMEBUFFER_COMPLETE) {
+					pixels = new Uint8Array((textureResolution * textureResolution * 4));
+					gl.readPixels(0, 0, textureResolution, textureResolution, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+					pixelread = true;
+				}
+			}
             var tsq = 0,
             nsq = 0;
             for (var i = 0; i < rad.ni; i++) {
@@ -9422,14 +9433,14 @@ function regn(nr, k, mag, c) {
                     if (Math.abs(tmag) > 0.1) {
                         if (Math.random() > 0.91) {
                             if (fase != 9) {
-                                chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], tmag);
+                                if (animateCrashes) chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], tmag);
                             }
                         }
                     }
                     if (fase == 7) {
                         hitmag[c] += (Math.abs(tmag) * 0.667);
                     }
-                    modpix = 1;
+                    if (animateCrashes) modpix = 1;
                 }
                 if ((nr == 3) && (Math.abs(rad.dvert[((i * 3) + 1)] - cd.flipy[car[c].typ] - squash[c]) < (cd.msquash[c][car[c].typ] * 3) || rad.dvert[((i * 3) + 1)] > cd.flipy[car[c].typ] + squash[c]) && (Math.abs(squash[c]) < cd.msquash[car[c].typ])) {
                     tmag = ((mag / 15) * Math.random());
@@ -9439,14 +9450,14 @@ function regn(nr, k, mag, c) {
                     if (Math.abs(tmag) > 0.1) {
                         if (Math.random() > 0.91) {
                             if (fase != 9) {
-                                chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], tmag);
+                                if (animateCrashes) chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], tmag);
                             }
                         }
                     }
                     if (fase == 7) {
                         hitmag[c] += (Math.abs(tmag) * 0.667);
                     }
-                    modpix = 2;
+                    if (animateCrashes) modpix = 2;
                 }
                 if ((pixelread) && (modpix)) {
                     var pxc = Math.round(rad.tex[(rad.tri[((i * 3) + 2)] * 2)] * textureResolution);
@@ -9554,13 +9565,15 @@ function regn(nr, k, mag, c) {
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, textureResolution, textureResolution, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
                 gl.generateMipmap(gl.TEXTURE_2D);
             }
-            gl.deleteFramebuffer(framebuffer);
-            rad.loaded = 0;
-            gl.deleteBuffer(rad.vbuf);
-            rad.vbuf = null;
-            rad.vbuf = gl.createBuffer();
-            gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(rad.dvert), gl.STATIC_DRAW);
+			if (animateCrashes) {
+				gl.deleteFramebuffer(framebuffer);
+				rad.loaded = 0;
+				gl.deleteBuffer(rad.vbuf);
+				rad.vbuf = null;
+				rad.vbuf = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
+				gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(rad.dvert), gl.STATIC_DRAW);
+			}
             rad.loaded = 2;
         }
     }
@@ -9595,7 +9608,7 @@ function chipburn(c) {
         if ((Math.random() > Math.random()) && (Math.random() > Math.random())) {
             car[c].ctxl[0] = Math.random();
             car[c].ctxl[1] = Math.random();
-            chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], (0.1 + (Math.random() * 0.2)));
+            if (animateCrashes) chipaway(c, rad.dvert[(i * 3)], rad.dvert[((i * 3) + 1)], rad.dvert[((i * 3) + 2)], (0.1 + (Math.random() * 0.2)));
         }
     }
 }
@@ -12825,13 +12838,13 @@ function drawcarselect() {
     }
     rd.letterSpacing = "1px";
     rd.font = "" + (16 * (mh + mw)) + "px adventure";
-    rd.textAlign = "left";
+    rd.textAlign = "center";
     rd.textBaseline = "middle";
     rd.strokeStyle = "#0C0959";
     rd.lineWidth = (10 * avm);
-    rd.strokeText("Select your Car", (lefy + (20 * avm)), (25 * mh));
+    rd.strokeText("Select your Car", (640 * mw), (25 * mh));
     rd.fillStyle = "#8665FF";
-    rd.fillText("Select your Car", (lefy + (20 * avm)), (25 * mh));
+    rd.fillText("Select your Car", (640 * mw), (25 * mh));
     if (flyout == 0) {
         rd.letterSpacing = "1px";
         rd.font = "" + (20 * (mh + mw)) + "px adventure";
@@ -12884,58 +12897,58 @@ function drawcarselect() {
             rd.textBaseline = "middle";
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Top Speed", (lefy + (180 * avm)), (200 * mh));
+            rd.strokeText("Top Speed", (lefy + (180 * avm)), (550 * mh));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Top Speed", (lefy + (180 * avm)), (200 * mh));
+            rd.fillText("Top Speed", (lefy + (180 * avm)), (550 * mh));
             var perci = ((cd.swits[sel[0]][2] - 22) / 9);
             if (perci < 0.2) {
                 perci = 0.2;
             }
-            drawcoolrect((lefy + (300 * avm)), ((200 * mh) - (7 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((lefy + (300 * avm)), ((550 * mh) - (7 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Acceleration", (lefy + (180 * avm)), ((200 * mh) + (40 * avm)));
+            rd.strokeText("Acceleration", (lefy + (180 * avm)), ((550 * mh) + (40 * avm)));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Acceleration", (lefy + (180 * avm)), ((200 * mh) + (40 * avm)));
+            rd.fillText("Acceleration", (lefy + (180 * avm)), ((550 * mh) + (40 * avm)));
             perci = ((cd.acelf[sel[0]][1] * cd.acelf[sel[0]][0] * cd.acelf[sel[0]][2] * cd.grip[sel[0]]) / 0.77);
             if (perci > 1) {
                 perci = 1;
             }
-            drawcoolrect((lefy + (300 * avm)), ((200 * mh) - (7 * avm) + (40 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((lefy + (300 * avm)), ((550 * mh) - (7 * avm) + (40 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Handling", (lefy + (180 * avm)), ((200 * mh) + (80 * avm)));
+            rd.strokeText("Handling", (lefy + (180 * avm)), ((550 * mh) + (80 * avm)));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Handling", (lefy + (180 * avm)), ((200 * mh) + (80 * avm)));
+            rd.fillText("Handling", (lefy + (180 * avm)), ((550 * mh) + (80 * avm)));
             perci = cd.dishandle[sel[0]];
-            drawcoolrect((lefy + (300 * avm)), ((200 * mh) - (7 * avm) + (80 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((lefy + (300 * avm)), ((550 * mh) - (7 * avm) + (80 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Stunts", (rigy - (290 * avm)), (200 * mh));
+            rd.strokeText("Stunts", (rigy - (290 * avm)), (550 * mh));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Stunts", (rigy - (290 * avm)), (200 * mh));
+            rd.fillText("Stunts", (rigy - (290 * avm)), (550 * mh));
             perci = (((cd.airc[sel[0]] * 10 * cd.airs[sel[0]] * cd.bounce[sel[0]]) + 28) / 139);
             if (perci > 1) {
                 perci = 1;
             }
-            drawcoolrect((rigy - (170 * avm)), ((200 * mh) - (7 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((rigy - (170 * avm)), ((550 * mh) - (7 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Strength", (rigy - (290 * avm)), ((200 * mh) + (40 * avm)));
+            rd.strokeText("Strength", (rigy - (290 * avm)), ((550 * mh) + (40 * avm)));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Strength", (rigy - (290 * avm)), ((200 * mh) + (40 * avm)));
+            rd.fillText("Strength", (rigy - (290 * avm)), ((550 * mh) + (40 * avm)));
             perci = ((cd.moment[sel[0]] + 0.5) / 2.6);
             if (perci > 1) {
                 perci = 1;
             }
-            drawcoolrect((rigy - (170 * avm)), ((200 * mh) - (7 * avm) + (40 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((rigy - (170 * avm)), ((550 * mh) - (7 * avm) + (40 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (6 * avm);
-            rd.strokeText("Endurance", (rigy - (290 * avm)), ((200 * mh) + (80 * avm)));
+            rd.strokeText("Endurance", (rigy - (290 * avm)), ((550 * mh) + (80 * avm)));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("Endurance", (rigy - (290 * avm)), ((200 * mh) + (80 * avm)));
+            rd.fillText("Endurance", (rigy - (290 * avm)), ((550 * mh) + (80 * avm)));
             perci = cd.outdam[sel[0]];
-            drawcoolrect((rigy - (170 * avm)), ((200 * mh) - (7 * avm) + (80 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
+            drawcoolrect((rigy - (170 * avm)), ((550 * mh) - (7 * avm) + (80 * avm)), 200, 20, "#FF1301", "#FFBA01", "#29C2F0", perci);
         } else {
             rd.letterSpacing = "1px";
             rd.font = "" + (17 * (mh + mw)) + "px adventure";
@@ -12943,9 +12956,9 @@ function drawcarselect() {
             rd.textBaseline = "middle";
             rd.strokeStyle = "#00284A";
             rd.lineWidth = (10 * avm);
-            rd.strokeText("This car unlocks when  stage " + carIsLockedToStage + "  is completed!", (640 * mw), (200 * mh));
+            rd.strokeText("This car unlocks when  stage " + carIsLockedToStage + "  is completed!", (640 * mw), (550 * mh));
             rd.fillStyle = "#A3D5FF";
-            rd.fillText("This car unlocks when  stage " + carIsLockedToStage + "  is completed!", (640 * mw), (200 * mh));
+            rd.fillText("This car unlocks when  stage " + carIsLockedToStage + "  is completed!", (640 * mw), (550 * mh));
         }
         if (carIsLockedToStage) {
             var xp = [((640 * mw) - (300 * mh) - (3 * mh)), ((640 * mw) - (300 * mh) - (3 * mh)), ((640 * mw) - (120 * mh) - (3 * mh)), ((640 * mw) - (120 * mh) - (3 * mh))];
@@ -12986,8 +12999,8 @@ function drawcarselect() {
             }
         }
         if (carIsLockedToStage <= 0) {
-            if (carIsLockedToStage != -1) {
-                if (drawbutton(3, (rigy - (150 * avm)), ((720 * mh) - (100 * avm)), 200, 70, "#FF1301", "#FF8A01", "#780800", "#784100", 0, "PLAY ", 25, 0.9, btimg[1], 0.9, true)) {
+            if (carIsLockedToStage != -1) { //(640 * mw), ((95 * mh) + (35 * avm))
+                if (drawbutton(3, (640 * mw), ((720 * mh) - (100 * avm)), 200, 70, "#FF1301", "#FF8A01", "#780800", "#784100", 0, "PLAY ", 25, 0.9, btimg[1], 0.9, true)) {
                     saveInfo("carsel", sel[0]);
                     stageloadtyp = 0;
                     stageload = -1;
