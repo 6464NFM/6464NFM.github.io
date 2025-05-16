@@ -10,7 +10,7 @@ if (typeof customConfigLoaded === 'undefined') {
 	var monoMusic = false;
 	var practiceGame = false;
 	var nfm1 = false;
-	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
+	var carsCanFly = true; //launch your car off a jump and hit shift + spacebar
 	var instantRaceStart = false;
 	var instantCarSelect = true;
 	var requireHandbrakeForStunts = "auto";
@@ -31,6 +31,13 @@ currentTime = 0;
 ctime = 0;
 chiptuneTimerPreviousCheck = 0;
 firstTimeCheck = true;
+lbL = false;
+lbR = false;
+newStageUp = false;
+newStageDown = false;
+newCarUp = false;
+newCarDown = false;
+hotStart = false;
 
 function onChipTuneLoaded() { //this function is a callback modded into chiptune3 / (mono-output), apparently it lacks
 	if (stageMusicPlaying) {  //a callback function when the music is ready to play...
@@ -46,6 +53,35 @@ function onChipTuneLoaded() { //this function is a callback modded into chiptune
 function pulseSky() { //does nothing right now, potential experiements in the future?
 	stageSky = [0,0,0];
 	skytexture(stageSky, stageFog, stageClouds, stageCloudsType);
+}
+
+function seamlessLoad() {
+	if (newCarDown) {
+		newCarDown = false;
+		hotStart = true;
+		if (sel[0] >= 1) sel[0]--;
+		engsource.loop = false;
+        engstarted = false;
+		loadeng(sel[0]);
+		inishcars();
+	}
+	if (newCarUp) {
+		newCarUp = false;
+		hotStart = true;
+		if (sel[0] <= 17) sel[0]++;
+		engsource.loop = false;
+        engstarted = false;
+		loadeng(sel[0]);
+		inishcars();
+	}
+	if (newStageDown) {
+		newStageDown = false;
+		cp.stage--;
+		stageloadtyp = 2;
+		loadstage();
+		window.chiptune.stop();
+		playStageMusic();
+	}
 }
 				
 
@@ -1385,6 +1421,7 @@ function drawparticle(rad) {
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         }
+		if (rad.mat == null) rad.mat = [];
         rad.mat[12] = (rad.x - camx);
         rad.mat[13] = (rad.y - camy);
         rad.mat[14] = (rad.z - camz);
@@ -1428,6 +1465,7 @@ function drawrad3D(rad) {
                 pro = 4;
             }
         }
+		if (rad.mat == null) rad.mat = [];
         rad.mat[12] = (rad.x - camx);
         rad.mat[13] = (rad.y - camy);
         rad.mat[14] = (rad.z - camz);
@@ -1601,6 +1639,7 @@ function isPowerOf2(value) {
     return ((value & (value - 1)) == 0);
 }
 function getonscreen(m, rad) {
+	if (rad.mat == null) rad.mat = [];
     var x = rad.mat[12];
     var y = rad.mat[13];
     var z = rad.mat[14];
@@ -3279,13 +3318,8 @@ function gameworks() {
 		while (campzy > 270) {
             campzy -= 360;
         }
-		if ((flyingCars) && (handBrakeStunt)) {
-			camzy = 10; //getthecamera 
-			//console.log(pzy[0]);
-		} else {
-			camzy = 10;
-			campzy = 25;
-		}
+		camzy = 10;
+		campzy = 25;
         var bado = (2 + (Math.abs(bcxz) / 4));
         if (bado > 20) {
             bado = 20;
@@ -3323,8 +3357,8 @@ function gameworks() {
         }
         var kcxz = (cxz[cim] - 180 + bcxz);
         camxz = kcxz;
-        camx = (car[cim].x - (80 * msin(kcxz)));
-        camz = (car[cim].z + (80 * mcos(kcxz)));
+        camx = (car[cim].x - (90 * msin(kcxz))); //80
+        camz = (car[cim].z + (90 * mcos(kcxz))); //80
         camy = (car[cim].y + 25);
     }
     if (camode == 1) {
@@ -3459,6 +3493,52 @@ function gameworks() {
         camxz =  - (-vxz + 90);
         camzy += ((rzy - camzy) / 10);
     }
+	if (camode == 4) {
+		//carzy = car[0].zy;
+							//while (carzy > 360) {
+								//carzy -= 360;
+							//}
+							//while (carzy < 360) {
+								//carzy += 360;
+							//}
+							
+							//console.log(pzyr + "," + pxyr);
+		campzy = pzy[0];
+		while (campzy > 270) {
+            campzy -= 360;
+        }
+			camzy = 10; //getthecamera
+			campzy = 25;
+			//camxz
+			//console.log(pzy[0]);
+        var bado = (2 + (Math.abs(bcxz) / 4));
+        if (bado > 20) {
+            bado = 20;
+        }
+        bado *= m;
+        if (lookback != 0) {
+            if ((!lbR) && (lbL)) {
+                    bcxz += 6;
+                
+            }
+            if ((lbR) && (!lbL)) {
+                    bcxz -= 6;
+            }
+        }
+		if ((lbR) && (lbL)) {
+			lbR = false;
+			lbL = false;
+			console.log("reset!");
+			bcxz = 0;
+		}
+            
+		var kcxz = (cxz[cim] - 180 + bcxz);
+        camxz = kcxz;
+        camx = (car[cim].x - (80 * msin(kcxz)));
+		camy = (car[cim].y + 25);
+        camz = (car[cim].z + (80 * mcos(kcxz)));
+	}
+		
     skydom.x = camx;
     skydom.z = camz;
     var skf = (0.6 + (camy / 4000));
@@ -4419,15 +4499,18 @@ for (var i = 0; i < 7; i++) {
 function inishcars() {
     for (var i = 0; i < ncars; i++) {
         car[i].typ = sel[i];
-        car[i].x = (xstart[i] + (4 * Math.random()) - 2);
-        car[i].z = zstart[i];
-        car[i].grat = (wly[car[i].typ][1] + (1.5 * wlh[car[i].typ][1]));
-        car[i].y = car[i].grat;
-        car[i].xy = 0;
-        car[i].xz = 0;
-        car[i].zy = 0;
-        car[i].wzy = 0;
-        car[i].wxz = 0;
+		car[i].grat = (wly[car[i].typ][1] + (1.5 * wlh[car[i].typ][1]));
+		if (!hotStart) {
+			car[i].x = (xstart[i] + (4 * Math.random()) - 2);
+			car[i].y = car[i].grat;
+			car[i].z = zstart[i];
+			car[i].xy = 0;
+			car[i].xz = 0;
+			car[i].zy = 0;
+			car[i].wzy = 0;
+			car[i].wxz = 0;
+		}
+		if (i == 6) hotStart = false;
         car[i].keyx[0] = -wlx[car[i].typ][0];
         car[i].keyz[0] = wlz[car[i].typ][0];
         car[i].keyx[1] = wlx[car[i].typ][0];
@@ -4448,7 +4531,7 @@ function sortcars(stage) {
 	if (nfm1) ncars = 4;
 	if (practiceGame) ncars = 1;
 	
-    for (var i = 1; i < 7; i++) {
+    for (var i = 1; i < ncars; i++) {
         sel[i] = -1;
     }
     var oks = [];
@@ -4546,7 +4629,7 @@ function sortcars(stage) {
     }
     if ((stage == 6) && (unlocked == 6)) {
         var okcar = false;
-        for (var i = 0; i < 7; i++) {
+        for (var i = 0; i < ncars; i++) {
             if (sel[i] == 11) {
                 okcar = true;
             }
@@ -4580,7 +4663,7 @@ function sortcars(stage) {
     }
     if ((stage == 16) && (unlocked == 16)) {
         var okcar = false;
-        for (var i = 0; i < 7; i++) {
+        for (var i = 0; i < ncars; i++) {
             if (sel[i] == 16) {
                 okcar = true;
             }
@@ -4625,24 +4708,18 @@ function sortcars(stage) {
         }
     }
 }
+
+// everything that has an array length of 7 is assumed to be something to do with ncars.... how bad can i fuck this up?
+
+
+
+
 var fpnt = [0, 0, 0, 0, 0];
-var pan = [0, 0, 0, 0, 0, 0, 0];
-var attack = [0, 0, 0, 0, 0, 0, 0], acr = [0, 0, 0, 0, 0, 0, 0];
-var afta = [false, false, false, false, false, false, false];
-var trfix = [0, 0, 0, 0, 0, 0, 0];
-var forget = [false, false, false, false, false, false, false];
-var bulistc = [false, false, false, false, false, false, false];
-var runbul = [0, 0, 0, 0, 0, 0, 0];
-var acuracy = [0, 0, 0, 0, 0, 0, 0];
-var upwait = [0, 0, 0, 0, 0, 0, 0];
-var agressed = [false, false, false, false, false, false, false];
-var skiplev = [1, 1, 1, 1, 1, 1, 1];
-var clrnce = [5, 5, 5, 5, 5, 5, 5];
+
 var rampp = [0, 0, 0, 0, 0, 0, 0];
 var turntyp = [0, 0, 0, 0, 0, 0, 0];
 var aim = [0, 0, 0, 0, 0, 0, 0];
 var saftey = [30, 30, 30, 30, 30, 30, 30];
-var perfection = [false, false, false, false, false, false, false];
 var mustland = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
 var usebounce = [false, false, false, false, false, false, false];
 var trickprf = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
@@ -4689,7 +4766,30 @@ function inishcontrol() {
             fpnt[0] = 42;
         }
     }
-    for (var c = 1; c < 7; c++) {
+	
+	pan = [];
+	attack = [];
+	acr = [];
+	afta = [];
+	trfix = [];
+	acuracy = [];
+	upwait = [];
+	forget = [];
+	bulistc = [];
+	runbul = [];
+	revstart = [];
+	oupnt = [];
+	gowait = [];
+	apunch = [];
+	exitattack = [];
+	hold = [];
+	perfection = [];
+	acuracy = [];
+	agressed = [];
+	skiplev = [];
+	clrnce = [];
+	
+    for (var c = 1; c < ncars; c++) {
         pan[c] = 0;
         attack[c] = 0;
         acr[c] = 0;
@@ -4706,6 +4806,11 @@ function inishcontrol() {
         apunch[c] = 0;
         exitattack[c] = false;
         hold[c] = 0;
+		perfection[c] = false;
+		acuracy[c] = 0;
+		agressed[c] = false;
+		skiplev[c] = 1;
+		clrnce[c] = 5;
         if (cp.stage == 6) {
             hold[c] = 50;
         }
@@ -4757,7 +4862,7 @@ function inishcontrol() {
     }
 }
 function control() {
-    for (var c = 1; c < ncars; c++) {
+    for (var c = 1; c < ncars; c++) { //set 1 to 0 for the ai to race instead
         var cn = car[c].typ;
         u[c].left = false;
         u[c].right = false;
@@ -6458,7 +6563,7 @@ function control() {
                         swat[c] = 0;
                     }
                 }
-                if (trickfase[c] == 2) {
+                if (trickfase[c] == 2) { //ai?
                     if (swat[c] == 0) {
                         if (dcomp[c] != 0 || ucomp[c] != 0) {
                             udbare[c] = true;
@@ -7142,14 +7247,6 @@ function drive() {
 								car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
 							}
 							pxy[c] += ((rcomp[c] - lcomp[c]) * m);
-							//while (pzy[0] > 360) {
-							//	pzy[0] -= 359.9;
-							//}
-							//while (pzy[0] < 360) {
-							//	pzy[0] += 359.9;
-							//}
-							
-							console.log(pzyr + "," + pxyr);
 						}
 					}
 					
@@ -7341,7 +7438,7 @@ function drive() {
         } else {
             car[c].xz += fxz[c];
         }
-        if ((speed[c] > 3) || (speed[c] < -7)) {
+        if ((speed[c] > 3) || (speed[c] < -7) || (flyingCars)) {
             while (Math.abs(mxz[c] - cxz[c]) > 180) {
                 if (cxz[c] > mxz[c]) {
                     cxz[c] -= 360;
@@ -8899,12 +8996,21 @@ function drive() {
                                     rpdcatch = 43;
                                     hpowerup = powerup[c];
                                 }
-                                if (power[c] > maxPower) {
-                                    power[c] = maxPower; //this is the max power limit
-                                    if (powerup[c] > 150) {
-                                        xtpower[c] = powerPinnedHigh;
+                                if (power[c] > 200) {
+                                    power[c] = 200; //this is the max power limit
+                                    if (powerup[c] > 50) {
+                                        xtpower[c] = 300;
                                     } else {
-                                        xtpower[c] = powerPinnedLow;
+                                        xtpower[c] = 300;
+                                    }
+                                }
+								
+								if (power[0] > maxPower) {
+                                    power[0] = maxPower; //this is the max power limit
+                                    if (powerup[0] > 150) {
+                                        xtpower[0] = powerPinnedHigh;
+                                    } else {
+                                        xtpower[0] = powerPinnedLow;
                                     }
                                 }
                             }
@@ -9317,7 +9423,10 @@ function colide(c, xc) {
         }
     }
 }
-var colidim = [false, false, false, false, false, false, false];
+colidim = [];
+for (var iterationNumber = 0; iterationNumber < ncars; iterationNumber++) { //set 1 to 0 for the ai to race instead
+	colidim[iterationNumber] = false;
+}
 function regn(nr, k, mag, c) {
     if (fase == 7) {
         mag *= cd.dammult[car[c].typ];
@@ -13297,7 +13406,11 @@ function drawstageselect() {
                     } else {
                         flkun = 1;
                     }
-                }
+                } else {
+					cp.stage = 1;
+					stageload = -1;
+					flkun = 1;
+				}
                 u[0].right = false;
             }
             if (u[0].left) {
@@ -13305,7 +13418,18 @@ function drawstageselect() {
                     cp.stage--;
                     stageload = -1;
                     flkun = 1;
-                }
+                } else {
+					cp.stage = 17;
+					if (cp.stage != unlocked) {
+						flkun = 1;
+						cp.stage = unlocked;
+						stageload = -1;
+					} else {
+						cp.stage = 17;
+						stageload = -1;
+						flkun = 1;
+					}
+				}
                 u[0].left = false;
             }
             if (cp.stage > 1) {

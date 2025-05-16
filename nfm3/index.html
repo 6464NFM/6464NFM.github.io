@@ -136,7 +136,7 @@
 
       function Keydown(evt) {
 		onPageInteraction();
-        evt.preventDefault();
+         evt.preventDefault();
         var k = evt.keyCode;
         if (k == 38 || k == 87) {
           u[0].up = true;
@@ -181,6 +181,23 @@
           u[0].onlyArrowRight = true;
         }
 		
+		if (k == 189) {
+          newStageDown = true;
+		  seamlessLoad();
+        }
+		if (k == 187) {
+          newStageUp = true;
+		  seamlessLoad();
+        }
+		if (k == 49) {
+          newCarDown = true;
+		  seamlessLoad();
+        }
+		if (k == 50) {
+          newCarUp = true;
+		  seamlessLoad();
+        }
+		
         if (k == 32) {
           u[0].handb = true;
           if (fase != 7) {
@@ -196,9 +213,11 @@
         }
         if (k == 90) {
           lookback = -1;
+		  lbR = true;
         }
         if (k == 88) {
           lookback = 1;
+		  lbL = true;
         }
       }
 
@@ -270,11 +289,13 @@
         }
         if (k == 90 || k == 88) {
           lookback = 0;
+		  lbR = false;
+		  lbL = false;
         }
         if (k == 86) {
           if (fase == 7) {
             camode++;
-            if (camode == 3) {
+            if (camode == 5) {
               camode = 0;
             }
           }
@@ -432,6 +453,9 @@
 	      const retivalue = parseInt(ivalue);
 	      return Number.isNaN(retivalue) ? -1 : retivalue;
 	  }
+	  function gofs() {
+		requestFullscreen();
+	}
     </script>
   </body>
 </html>
