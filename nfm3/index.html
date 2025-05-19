@@ -136,7 +136,7 @@
 
       function Keydown(evt) {
 		onPageInteraction();
-         evt.preventDefault();
+         //evt.preventDefault();
         var k = evt.keyCode;
         if (k == 38 || k == 87) {
           u[0].up = true;
@@ -222,7 +222,7 @@
       }
 
       function Keyup(evt) {
-        evt.preventDefault();
+        //evt.preventDefault();
         var k = evt.keyCode;
         if (k == 38 || k == 87) {
           u[0].up = false;
@@ -443,7 +443,7 @@
 	  }
 
 	  // Retrieve a value from cookies by key
-	  function getInfo(iname) {
+	  function getInfo(iname, type) {
 	      const cookies = document.cookie.split(";").map(cookie => cookie.trim());
 	      const cookie = cookies.find(c => c.startsWith(`${encodeURIComponent(iname)}=`));
 	      let ivalue = "-1";
@@ -451,7 +451,9 @@
 	          ivalue = decodeURIComponent(cookie.split("=")[1]);
 	      }
 	      const retivalue = parseInt(ivalue);
-	      return Number.isNaN(retivalue) ? -1 : retivalue;
+		  if (type == "Interger") return Number.isNaN(retivalue) ? -1 : retivalue;
+		  if (type == "String") return ivalue;
+	      //return Number.isNaN(retivalue) ? -1 : retivalue;
 	  }
 	  function gofs() {
 		requestFullscreen();

@@ -1,16 +1,17 @@
 if (!isSecureContext) alert("NFM will not run outside of secure context!!! please use localhost or a server with HTTPS!!!")
 // mtouch = carIsGrounded
 
-/* ----- original modded files by Kirtide, further maddened by dmack6464! ----- */
+/* ----- original modded files by Kirtide, HD textures by Maxine, further maddened by dmack6464 ----- */
 
 if (typeof customConfigLoaded === 'undefined') {
 	/* global variables! */
+	var gamePlaysItself = false;
 	var FOV = 60; //default 55 (will always default to 55 on mobile devices!)
 	var HDTextures = true;
 	var monoMusic = false;
 	var practiceGame = false;
 	var nfm1 = false;
-	var carsCanFly = true; //launch your car off a jump and hit shift + spacebar
+	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
 	var instantRaceStart = false;
 	var instantCarSelect = true;
 	var requireHandbrakeForStunts = "auto";
@@ -27,10 +28,6 @@ animateCrashes = false;
 carSelectSmoke = false;
 handBrakeStunt = false;
 flyingCars = false;
-currentTime = 0;
-ctime = 0;
-chiptuneTimerPreviousCheck = 0;
-firstTimeCheck = true;
 lbL = false;
 lbR = false;
 newStageUp = false;
@@ -38,6 +35,13 @@ newStageDown = false;
 newCarUp = false;
 newCarDown = false;
 hotStart = false;
+
+/*
+nothing must pass this line...
+unless it is well defined...
+you just have to be resigned...
+you're crashing by design!!!
+*/
 
 function onChipTuneLoaded() { //this function is a callback modded into chiptune3 / (mono-output), apparently it lacks
 	if (stageMusicPlaying) {  //a callback function when the music is ready to play...
@@ -83,6 +87,10 @@ function seamlessLoad() {
 		playStageMusic();
 	}
 }
+
+function firstTimeLoaded() {
+	//stub for future me...
+}
 				
 
 if (requireHandbrakeForStunts == "auto") {
@@ -102,6 +110,16 @@ if (HDTextures) {
 } else {
 	var textureResolution = 256;
 }
+
+if (gamePlaysItself) {
+	playerAIBit = 0;
+} else {
+	playerAIBit = 1;
+}
+
+ncars = 11;
+if (nfm1) ncars = 4;
+if (practiceGame) ncars = 1;
 
 //gamecode start
 var programInfo = [];
@@ -2169,13 +2187,14 @@ function loaddata() {
             createwheels();
             creatdustextures();
             onskip = false;
-            sel[0] = getInfo("carsel");
+            sel[0] = getInfo("carsel", "Interger");
             if (sel[0] == -1) {
                 sel[0] = 0;
-                onskip = true;
+                //onskip = true; //this controls whether the game will immediately start when you load for the first time...
                 onautocorrect = 2;
+				firstTimeLoaded();
             }
-            unlocked = getInfo("unlocked");
+            unlocked = getInfo("unlocked", "Interger");
             if (unlocked == -1) {
                 unlocked = 1;
             }
@@ -2184,12 +2203,12 @@ function loaddata() {
                 cp.stage = Math.floor(3 + (Math.random() * 13));
                 canreset = true;
             }
-            for (var i = 0; i < 4; i++) {
-                rewlocked[i] = getInfo("rewlocked" + i + "");
+            /*for (var i = 0; i < 4; i++) {
+                rewlocked[i] = getInfo("rewlocked" + i + "", "Interger");
                 if (rewlocked[i] == -1) {
                     rewlocked[i] = 1;
                 }
-            }
+            }*/
             fredo = 0;
             fase = 1;
             if (onskip) {
@@ -3222,6 +3241,7 @@ function gameworks() {
             control();
             drawinter();
             enginsnd();
+			u[0].airShift = false;
         } else {
             if (raceStartCountdown == 186) {
                 adv = 190;
@@ -3357,7 +3377,7 @@ function gameworks() {
         }
         var kcxz = (cxz[cim] - 180 + bcxz);
         camxz = kcxz;
-        camx = (car[cim].x - (90 * msin(kcxz))); //80
+        camx = (car[cim].x - (90 * msin(kcxz))); //80, distance the default camera angle is from the car
         camz = (car[cim].z + (90 * mcos(kcxz))); //80
         camy = (car[cim].y + 25);
     }
@@ -4297,7 +4317,7 @@ function newcontrol() {
     };
 }
 var u = [];
-for (var i = 0; i < 7; i++) {
+for (var i = 0; i < ncars; i++) {
     u[i] = newcontrol();
 }
 class CarDefine {
@@ -4471,8 +4491,8 @@ function checkstat() {
         }
     }
 }
-var xstart = [0, -35, 35, 0, -35, 35, 0];
-var zstart = [-76, -38, -38, 0, 38, 38, 76];
+var xstart = [0, -35, 35, 0, -35, 35, 0, 50, 100, -50, -100];
+var zstart = [-76, -38, -38, 0, 38, 38, 76, 50, 100, 50, 100];
 function newcar() {
     return {
         typ: 0,
@@ -4493,7 +4513,7 @@ function newcar() {
     };
 }
 var car = [];
-for (var i = 0; i < 7; i++) {
+for (var i = 0; i < ncars; i++) {
     car[i] = newcar();
 }
 function inishcars() {
@@ -4527,15 +4547,14 @@ function inishcars() {
 }
 function sortcars(stage) {
 	
-	ncars = 7;
-	if (nfm1) ncars = 4;
-	if (practiceGame) ncars = 1;
+	//ncars used to go here
 	
     for (var i = 1; i < ncars; i++) {
         sel[i] = -1;
     }
     var oks = [];
     var ti = ncars;
+	//the below if statement seems to control what "boss" car is used in a stage...
     if ((sel[0] != Math.floor(10 + ((stage + 1) / 2))) && (stage != 17) && (!practiceGame)) {
         sel[(ncars - 1)] = Math.floor(10 + ((stage + 1) / 2));
         ti = (ncars - 1);
@@ -4553,7 +4572,7 @@ function sortcars(stage) {
             oks[i] = true;
             for (var j = 0; j < ncars; j++) {
                 if ((i != j) && (sel[i] == sel[j])) {
-                    oks[i] = false;
+                    oks[i] = false; //this seems to control whether multiple of the same car appears...
                 }
             }
             if ((stage != 15) && (stage != 16)) {
@@ -4725,7 +4744,7 @@ var usebounce = [false, false, false, false, false, false, false];
 var trickprf = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
 var stuntf = [0, 0, 0, 0, 0, 0, 0];
 var lastl = [false, false, false, false, false, false, false], wlastl = [false, false, false, false, false, false, false];
-var hold = [0, 0, 0, 0, 0, 0, 0], wall = [-1, -1, -1, -1, -1, -1, -1], lwall = [-1, -1, -1, -1, -1, -1, -1];
+//var hold = [0, 0, 0, 0, 0, 0, 0], wall = [-1, -1, -1, -1, -1, -1, -1], lwall = [-1, -1, -1, -1, -1, -1, -1];
 var stcnt = [0, 0, 0, 0, 0, 0, 0], statusque = [0, 0, 0, 0, 0, 0, 0];
 var turncnt = [0, 0, 0, 0, 0, 0, 0], randtcnt = [0, 0, 0, 0, 0, 0, 0];
 var upcnt = [0, 0, 0, 0, 0, 0, 0];
@@ -4789,7 +4808,7 @@ function inishcontrol() {
 	skiplev = [];
 	clrnce = [];
 	
-    for (var c = 1; c < ncars; c++) {
+    for (var c = playerAIBit; c < ncars; c++) {
         pan[c] = 0;
         attack[c] = 0;
         acr[c] = 0;
@@ -4862,7 +4881,7 @@ function inishcontrol() {
     }
 }
 function control() {
-    for (var c = 1; c < ncars; c++) { //set 1 to 0 for the ai to race instead
+    for (var c = playerAIBit; c < ncars; c++) {
         var cn = car[c].typ;
         u[c].left = false;
         u[c].right = false;
@@ -6777,6 +6796,11 @@ var xtpower = [];
 var tilt = [];
 var crank = [];
 var lcrank = [];
+
+var hold = [], wall = [], lwall = [];
+
+//var hold = [0, 0, 0, 0, 0, 0, 0], wall = [-1, -1, -1, -1, -1, -1, -1], lwall = [-1, -1, -1, -1, -1, -1, -1];
+
 var squash = [], nbsq = [];
 var hitmag = [], cntdest = [];
 var dest = [];
@@ -6795,12 +6819,12 @@ var point = [];
 var nofocus = [];
 var lonorm = [];
 function inishmad() {
-    for (var c = 0; c < 7; c++) {
+    for (var c = 0; c < ncars; c++) {
         mxz[c] = 0;
         cxz[c] = 0;
         dominate[c] = [];
         caught[c] = [];
-        for (var i = 0; i < 7; i++) {
+        for (var i = 0; i < ncars; i++) {
             dominate[c][i] = false;
             caught[c][i] = false;
         }
@@ -6858,6 +6882,10 @@ function inishmad() {
         tilt[c] = 0;
         crank[c] = [];
         lcrank[c] = [];
+		hold[c] = 0;
+		wall[c] = -1;
+		lwall[c] = -1;
+		
         for (var i = 0; i < 4; i++) {
             crank[c][i] = 0;
             lcrank[c][i] = 0;
@@ -11474,10 +11502,10 @@ function resetgame() {
 }
 var wasu = false, wasd = false, wasl = false, wasr = false, wash = false, wast = false;
 var unlocked = 1;
-var rewlocked = [1, 1, 1, 1];
+//var rewlocked = [1, 1, 1, 1];
 var tiplocked = 0;
 var sel = [0, 0, 0, 0, 0, 0, 0];
-var ncars = 4;
+//var ncars = 4; //???
 var im = 0;
 var oncheckpoint = -1;
 var onlastcheck = false;
@@ -12991,11 +13019,11 @@ function drawcarselect() {
             }
         }
         var carIsLockedToStage = 0;
-        if ((sel[0] >= 7) && (sel[0] <= 10)) {
-            if (rewlocked[(sel[0] - 7)]) {
+        /*if ((sel[0] >= 7) && (sel[0] <= 10)) { //cars 7 to 10 aka tractor, kat, ice cream, drifter
+            if (rewlocked[(sel[0] - 7)]) { //why make others' computers even process this slop afterall??
                 carIsLockedToStage = -1;
             }
-        }
+        }*/
         if ((sel[0] >= 11) && (unlocked <= ((sel[0] - 10) * 2))) {
             carIsLockedToStage = ((sel[0] - 10) * 2);
         }
@@ -13101,15 +13129,15 @@ function drawcarselect() {
             rd.drawImage(lbar, ((640 * mw) - (120 * mh) - (3 * mh)), (600 * mh), (6 * mh), (111 * mh));
             rd.drawImage(rbar, ((640 * mw) + (120 * mh) - (3 * mh)), (600 * mh), (6 * mh), (111 * mh));
             rd.drawImage(rbar, ((640 * mw) + (300 * mh) - (3 * mh)), (560 * mh), (6 * mh), (111 * mh));
-            if (carIsLockedToStage == -1) {
+            /*if (carIsLockedToStage == -1) {
                 rd.drawImage(rewd, ((640 * mw) - (43.5 * mh)), (627 * mh), (87 * mh), (56 * mh));
-            } else {
+            } else {*/
                 rd.drawImage(lckd, ((640 * mw) - (29 * mh)), (619 * mh), (58 * mh), (72 * mh));
-            }
+            //}
         }
         if (carIsLockedToStage <= 0) {
-            if (carIsLockedToStage != -1) { //(640 * mw), ((95 * mh) + (35 * avm))
-                if (drawbutton(3, (640 * mw), ((720 * mh) - (100 * avm)), 200, 70, "#FF1301", "#FF8A01", "#780800", "#784100", 0, "PLAY ", 25, 0.9, btimg[1], 0.9, true)) {
+            /*if (carIsLockedToStage != -1) {*/ //(640 * mw), ((95 * mh) + (35 * avm))
+                if (drawbutton(3, (640 * mw), ((720 * mh) - (100 * avm)), 250, 70, "#FF1301", "#FF8A01", "#780800", "#784100", 0, "Stages ", 25, 0.9, btimg[1], 0.9, true)) {
                     saveInfo("carsel", sel[0]);
                     stageloadtyp = 0;
                     stageload = -1;
@@ -13122,7 +13150,7 @@ function drawcarselect() {
                     fase = 3;
                     enter = 2;
                 }
-            } else {
+            /*} else {
                 if (drawbutton(3, (rigy - (165 * avm)), ((720 * mh) - (100 * avm)), 230, 70, "#0057E6", "#65EFFF", "#440078", "#2F00A8", 0, "PLAY ", 25, 0.9, btimg[4], 0.9, true)) {
                     pauseMainMenuMusic();
                     RewardCar();
@@ -13132,7 +13160,7 @@ function drawcarselect() {
                     RewardCar();
                     enter = 2;
                 }
-            }
+            }*/
         }
     }
     if (!flwg) {
@@ -13163,7 +13191,7 @@ function drawcarselect() {
     }
     musictog();
 }
-function unlockrewcar() {
+function unlockrewcar() { //this function shouldnt ever be triggered...
     playMainMenuMusic();
     rewlocked[(sel[0] - 7)] = 0;
     saveInfo("rewlocked" + (sel[0] - 7) + "", rewlocked[(sel[0] - 7)]);
