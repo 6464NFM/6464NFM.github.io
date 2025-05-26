@@ -117,7 +117,7 @@ if (gamePlaysItself) {
 	playerAIBit = 1;
 }
 
-ncars = 11;
+ncars = 6;
 if (nfm1) ncars = 4;
 if (practiceGame) ncars = 1;
 
@@ -4530,7 +4530,7 @@ function inishcars() {
 			car[i].wzy = 0;
 			car[i].wxz = 0;
 		}
-		if (i == 6) hotStart = false;
+		if (i == (ncars - 1)) hotStart = false;
         car[i].keyx[0] = -wlx[car[i].typ][0];
         car[i].keyz[0] = wlz[car[i].typ][0];
         car[i].keyx[1] = wlx[car[i].typ][0];
@@ -11056,7 +11056,7 @@ function drawmain() {
         }
     }
     if (!onskip) {
-        if (drawbutton(1, (rigy - (230 * avm)), ((720 * mh) - (200 * avm)), 360, 60, "#FF1301", "#FF8A01", "#780800", "#784100", 1, "Game Instructions", 19, 0.9, null, 0, false)) {
+        if (drawbutton(1, (rigy - (230 * avm)), ((720 * mh) - (200 * avm)), 400, 60, "#FF1301", "#FF8A01", "#780800", "#784100", 1, "Game Instructions", 19, 0.9, null, 0, false)) {
             pauseMainMenuMusic();
             instmain = true;
             ifase = 0;
@@ -11576,7 +11576,7 @@ function inishinter() {
     onbreplay = 0;
     flw = 2;
     flh = 0.5;
-    for (var i = 0; i < 7; i++) {
+    for (var i = 0; i < ncars; i++) {
         u[i].arrace = false;
         u[i].zyinv = false;
     }

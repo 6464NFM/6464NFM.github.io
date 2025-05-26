@@ -6,7 +6,7 @@
 const defaultCfg = {
 	repeatCount: -1,		// -1 = play endless, 0 = play once, do not repeat
 	stereoSeparation: 0,	// percents
-	interpolationFilter: 0,	// https://lib.openmpt.org/doc/group__openmpt__module__render__param.html
+	interpolationFilter: 8,	// https://lib.openmpt.org/doc/group__openmpt__module__render__param.html
 	context: false,
 }
 
