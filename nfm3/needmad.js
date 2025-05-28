@@ -24,6 +24,7 @@ loadTheMusic(); //defined in madloader, should only be run when monoMusic is def
 init();
 
 //dont interact with these defaults
+tipsAlwaysEnabled = true;
 animateCrashes = false;
 carSelectSmoke = false;
 handBrakeStunt = false;
@@ -117,9 +118,11 @@ if (gamePlaysItself) {
 	playerAIBit = 1;
 }
 
-ncars = 6;
-if (nfm1) ncars = 4;
-if (practiceGame) ncars = 1;
+numberOfCars = 6;
+if (nfm1) numberOfCars = 4;
+if (practiceGame) numberOfCars = 1;
+ncars = numberOfCars;
+
 
 //gamecode start
 var programInfo = [];
@@ -2344,7 +2347,7 @@ function loadstage() {
                     if (strtsWith(line, "ground")) {
                         groundtexture(getIntValue("ground", line, 3), getIntValue("ground", line, 0), getIntValue("ground", line, 1), getIntValue("ground", line, 2), getFloatValue("ground", line, 4), getFloatValue("ground", line, 5));
                     }
-                    if ((cp.stage >= 3) && (unlocked == cp.stage)) {
+                    if ((cp.stage >= 3) && (unlocked == cp.stage) || (tipsAlwaysEnabled)) {
                         if (strtsWith(line, "tip")) {
                             tip[hastip] = getStringValue("tip", line, 0);
                             tip[hastip] = tip[hastip].replace("[", "(");
@@ -4546,16 +4549,14 @@ function inishcars() {
     }
 }
 function sortcars(stage) {
-	
-	//ncars used to go here
-	
+	ncars = numberOfCars;
     for (var i = 1; i < ncars; i++) {
         sel[i] = -1;
     }
     var oks = [];
     var ti = ncars;
 	//the below if statement seems to control what "boss" car is used in a stage...
-    if ((sel[0] != Math.floor(10 + ((stage + 1) / 2))) && (stage != 17) && (!practiceGame)) {
+    if ((sel[0] != Math.floor(10 + ((stage + 1) / 2))) && (stage != 17) /*&& (ncars != 1)*/) {
         sel[(ncars - 1)] = Math.floor(10 + ((stage + 1) / 2));
         ti = (ncars - 1);
     }
@@ -11503,7 +11504,7 @@ function resetgame() {
 var wasu = false, wasd = false, wasl = false, wasr = false, wash = false, wast = false;
 var unlocked = 1;
 //var rewlocked = [1, 1, 1, 1];
-var tiplocked = 0;
+//var tiplocked = 0;
 var sel = [0, 0, 0, 0, 0, 0, 0];
 //var ncars = 4; //???
 var im = 0;
@@ -11533,6 +11534,7 @@ var pwcnt = 0;
 var pwflk = false;
 var dmcnt = 0;
 var dmflk = false;
+var dmflk2 = false;
 var cntwis = 0;
 var dested = [];
 var onbreplay = 0;
@@ -11918,13 +11920,14 @@ function drawinter() {
         rd.fillText("Power", (lalign - (15 * avm)), (55 * avm));
         var trav = (98 * (hitmag[0] / cd.maxmag[car[0].typ]));
         if (trav > 98) {
-            trav = 98;
+            //trav = 98;
         }
-        var r = 255;
-        var g = 200;
+        var r = 0;
+        var g = 255;
         var b = 0;
         if (trav > 33) {
-            g = (200 - (189 * ((trav - 33) / 65)));
+            r = (200 + (189 * ((trav - 33) / 65)));
+			g = (200 - (189 * ((trav - 33) / 65)));
         }
         if (trav > 70) {
             if (dmcnt < 10) {
@@ -11950,8 +11953,11 @@ function drawinter() {
         g = (190 + (power[0] * 0.37));
         b = 255;
         if ((auscnt < 45) && (aflk)) {
-            r = 128;
-            g = 244;
+            //r = 128;
+            //g = 244;
+            //b = 255;
+			r = 200;
+            g = 80;
             b = 255;
         }
         drawbar(lalign, (42 * avm), "#00B0DC", "#005C96", "rgb(" + r + "," + g + "," + b + ")", (power[0] / 98));
@@ -13480,29 +13486,19 @@ function drawstageselect() {
             }
             if (!flkun) {
                 if (hastip) {
-                    if (tiplocked != cp.stage) {
-                        if (drawbutton(6, ((70 * mw) + (357 * avm)), ((720 * mh) - (157 * avm)), 160, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 0, "TIP ", 20, 0.9, btimg[4], 0.9, false)) {
-                            pauseMainMenuMusic();
-                            RewardTip();
-                        }
-                    } else {
                         if (drawbutton(6, ((70 * mw) + (357 * avm)), ((720 * mh) - (157 * avm)), 120, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 1, "TIP ", 22, 0.9, null, 0, false)) {
                             ontip = true;
                             dudo = 0;
-                        }
-                    }
-                } else {
-                    if (cp.stage == 1 || cp.stage == 2) {
-                        if (drawbutton(8, (canw - (510 * avm)), ((720 * mh) - (180 * avm)), 220, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 1, "Practice ", 22, 0.9, null, 0, false)) {
-                            setworld(snap, fogc, lvx, lvy, lvz, fogdist);
-                            gameplayStart();
-                            pauseMainMenuMusic();
-                            playStageMusic();
-                            ncars = 1;
-                            fase = 7;
-                        }
                     }
                 }
+			if (drawbutton(8, (canw - (510 * avm)), ((720 * mh) - (180 * avm)), 220, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 1, "Practice ", 22, 0.9, null, 0, false)) {
+					setworld(snap, fogc, lvx, lvy, lvz, fogdist);
+					gameplayStart();
+					pauseMainMenuMusic();
+					playStageMusic();
+					ncars = 1;
+					fase = 7;
+				}
             }
             if (flkpl > 30) {
                 r = Math.floor(128 + (128 * snap[0]));
@@ -13632,8 +13628,8 @@ function drawstageselect() {
     musictog();
 }
 function tipunlocked() {
-    playMainMenuMusic();
-    tiplocked = cp.stage;
+    //playMainMenuMusic();
+    //tiplocked = cp.stage;
     ontip = true;
     dudo = 0;
     fase = 4;
@@ -13778,6 +13774,39 @@ function arrow(pnt, misdcp, pntcar) {
         for (var i = 0; i < cd.names[car[pnti].typ].length; i++) {
             stspace += "  ";
         }
+		//pointtocar
+		
+		var trav = (98 * (hitmag[pnti] / cd.maxmag[car[pnti].typ]));
+        if (trav > 98) {
+            //trav = 98;
+        }
+        var r = 0;
+        var g = 255;
+        var b = 0;
+        if (trav > 33) {
+            r = (200 + (189 * ((trav - 33) / 65)));
+			g = (200 - (189 * ((trav - 33) / 65)));
+        }
+        if (trav > 70) {
+            if (dmcnt < 10) {
+                if (dmflk2) {
+                    g = 170;
+                    dmflk2 = false;
+                } else {
+                    dmflk2 = true;
+                }
+            }
+            if (frgm >= m) {
+                dmcnt++;
+            }
+            if (dmcnt > (167 - (trav * 1.5))) {
+                dmcnt = 0;
+            }
+        }
+		
+		//lalign, (6 * avm)
+		drawbarSimple((560 * mw), (15 * avm), "#FC4D00", "#B20000", "rgb(" + r + "," + g + "," + b + ")", (trav / 98));
+		
         drawcs(16, "[" + stspace + "]", 76, 67, 240, 1);
         drawcs(18, cd.names[car[pnti].typ], 0, 0, 0, 1);
     }
@@ -14030,6 +14059,12 @@ function drawbar(xb, yb, cb1, cb2, cbf, fct) {
     rd.closePath();
     rd.fill();
 }
+
+function drawbarSimple(xb, yb, cb1, cb2, cbf, fct) {
+    rd.fillStyle = cbf;
+    rd.fillRect((xb + (7 * avm)), (yb + (6 * avm)), (166 * fct * avm), (12 * avm));
+}
+
 var wasonit = [0, 0, 0, 0];
 function drawbutton(onx, xb, yb, wb, hb, cb1, cb2, cb3, cb4, typ, txt, fz, opa, img, iopa, flak) {
     wb = (wb * avm);
