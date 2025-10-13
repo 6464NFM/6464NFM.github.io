@@ -1,9 +1,9 @@
 
 name(Introductory Stage)
 
-soundtrack-name(stage1.mod)
+soundtrack-name(danko_-_italo_discoline.mod)
 soundtrack-volume(1.0)
-soundtrack-tempo(1.0)
+soundtrack-tempo(1.05)
 soundtrack-pitch(1.05)
 
 snap(10,0,-10)
@@ -14,7 +14,7 @@ ground(189,175,145,2,-0.1,0.7) //ground(r,g,b,textureNum,addedHueChangeFactor,ad
 distfog(10000)
 addon(1)
 
-nlaps(3)
+nlaps(4)
 
 set(47,0,0,0)p
 set(10,0,5600,180)p
