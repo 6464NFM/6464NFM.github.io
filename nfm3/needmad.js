@@ -92,6 +92,20 @@ function seamlessLoad() {
 function firstTimeLoaded() {
 	//stub for future me...
 }
+
+function GoBackVarFix() { /* why does this work? why is it even broken?????? */
+	snap = [0, -0.05, 0.6];
+	var fogc = [0, 0, 0];
+	var lvx = 0,
+	lvy = 0.866,
+	lvz = -0.5;
+	var fogdist = 10700;
+	setworld(snap, fogc, lvx, lvy, lvz, fogdist);
+	fase = 2;
+	rd.fillStyle = "#FFFFFF";
+	rd.fillRect(0, 0, canw, canh);
+}
+	
 				
 
 if (requireHandbrakeForStunts == "auto") {
@@ -1929,7 +1943,7 @@ function loadconfe() {
 var reqload = false;
 var dataload = 0;
 //var pokiready = false;
-var datacnt = 3276;
+var datacnt = 3275;
 if (isphone) {
     datacnt = 3243;
 }
@@ -2183,7 +2197,7 @@ function loaddata() {
             bg3D.loaded++;
         }
         //if ((dataload == datacnt) && (pokiready)) {
-		if (dataload == datacnt) {
+		if (dataload >= datacnt) {
 			//
 			//removed this, perhaps a skymad leftover?
             cartextures();
@@ -13467,16 +13481,7 @@ function drawstageselect() {
                 u[0].left = false;
             }
 			if (drawbutton(9, (210 * avm), (130 * mh), 150, 56, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 3, " Back", 20, 0.7, btimg[5], 0.7, false)) {
-				snap = [0, -0.05, 0.6];
-				var fogc = [0, 0, 0];
-				var lvx = 0,
-				lvy = 0.866,
-				lvz = -0.5;
-				var fogdist = 10700;
-				setworld(snap, fogc, lvx, lvy, lvz, fogdist);
-				fase = 2;
-				rd.fillStyle = "#FFFFFF";
-				rd.fillRect(0, 0, canw, canh);
+				GoBackVarFix();
 			}
             if (cp.stage > 1) {
                 if (drawbutton(3, (190 * avm), (360 * mh), 140, 47, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 3, " Prev", 15, 0.9, btimg[3], 0.9, false)) {
