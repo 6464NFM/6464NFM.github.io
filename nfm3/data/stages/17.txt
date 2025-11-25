@@ -1,10 +1,10 @@
 
 name(The Mad Party)
 
-soundtrack-name(oberheim_power.mod)
+soundtrack-name(luminance_-_domin8r.mod)
 soundtrack-volume(0.65)
 soundtrack-tempo(1.05)
-soundtrack-pitch(0.935)
+soundtrack-pitch(1.05)
 
 snap(20,-30,-60)
 sky(153,202,255)
