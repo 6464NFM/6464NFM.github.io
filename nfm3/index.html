@@ -33,7 +33,29 @@
 	-->
     <link rel="canonical" href="https://www.crazygames.com/game/need-for-madness">
 	<script type="text/javascript" src="libopenmpt.js"></script>
-  </head>
+  </head>  
+<style MobileMods="dmack6464">
+.toolsContainer {
+    position:absolute;
+    display:flex;
+    width:70%;
+    height:20%;
+    z-index:999999;
+    left:10px!important;
+    transform:none!important;
+}
+d-button {
+	padding:5px;
+}
+
+</style>
+<script>
+function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
+  var tempx = document.getElementById("toolsContainer");
+  tempx.remove();
+}
+</script>
+
   <body bgcolor="#15190D" link="#D3F2FF" alink="#D3F2FF" vlink="#D3F2FF" leftmargin="0" topmargin="0" margin="0" marginheight="0" marginwidth="0">
     <table id="loading" style="position: absolute; left: 0px; top: 0px; width: 100%; height: 100%">
       <tbody>
@@ -336,7 +358,7 @@
 
       function loadingComplete() {
         //window.CrazyGames.SDK.game.loadingStop();
-		pokiready = true
+		allDataLoaded();
       }
 
       function gameplayStart() {
