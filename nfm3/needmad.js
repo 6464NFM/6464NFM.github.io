@@ -10813,7 +10813,8 @@ function pausedgame() {
     if (onhip == 0) {
         on = 1;
     }
-    if (drawbutton(1, (640 * mw), ((95 * mh) + (35 * avm)), 350, 60, bton[on][0], bton[on][1], bton[on][2], bton[on][3], 0, "Resume Game ", 20, 0.8, btimg[1], 0.8, on)) {
+    if ((drawbutton(1, (640 * mw), ((95 * mh) + (35 * avm)), 350, 60, bton[on][0], bton[on][1], bton[on][2], bton[on][3], 0, "Resume Game ", 20, 0.8, btimg[1], 0.8, on)) || (escape)) {
+		escape = false;
         noten = 0;
         if (!playedforeplay) {
             resumestagetrack();
@@ -11808,8 +11809,10 @@ function drawinter() {
         if (holdcnt != 0) {
             holdcnt = 0;
         }
-        if ((enter == 1) && (raceStartCountdown <= 65)) {
-            enter = 2;
+
+        if (((enter == 1) || (escape)) && (raceStartCountdown <= 65)) {
+			escape = false;
+			enter = false;
             onhip = 0;
             stopstagetrack();
             gameplayStop();
@@ -13480,7 +13483,7 @@ function drawstageselect() {
 				}
                 u[0].left = false;
             }
-			if (drawbutton(9, (210 * avm), (130 * mh), 150, 56, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 3, " Back", 20, 0.7, btimg[5], 0.7, false)) {
+			if ((drawbutton(9, (210 * avm), (130 * mh), 150, 56, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 3, " Back", 20, 0.7, btimg[5], 0.7, false)) || (escape)) {
 				GoBackVarFix();
 			}
             if (cp.stage > 1) {

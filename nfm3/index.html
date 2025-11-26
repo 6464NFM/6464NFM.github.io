@@ -89,6 +89,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
       var nms = 0;
       var mdown = false;
       var enter = 0;
+	  var escape = false;
 
       function msmove(evt) {
         var rect = canvas2D.getBoundingClientRect();
@@ -228,9 +229,14 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
             }
           }
         }
-        if (k == 13 || k == 27) {
+        if (k == 13 /*|| k == 27*/) {
           if (!enter) {
             enter = 1;
+          }
+        }
+		if (k == 27) {
+          if (!escape) {
+            escape = true;
           }
         }
         if (k == 90) {
@@ -297,9 +303,14 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
             }
           }
         }
-        if (k == 13 || k == 27) {
+        if (k == 13 /*|| k == 27*/) {
           if (enter) {
             enter = 0;
+          }
+        }
+		if (k == 27) {
+          if (escape) {
+            escape = false;
           }
         }
         if (k == 81) {
