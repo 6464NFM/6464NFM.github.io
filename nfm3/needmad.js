@@ -13443,6 +13443,9 @@ function drawstageselect() {
             rd.fillText("Final Stage", (640 * mw), (120 * mh));
             loadconfe();
         }
+		if (!isphone) {
+			rd.fillText("Press SHIFT + ENTER for practice game", (640 * mw), (700 * mh));
+		}
         if (!ontip) {
             rgb = hslToRgb((hsl[0] - 0.05), 1, 0.5);
             var rgb2 = hslToRgb((hsl[0] + 0.05), 1, 0.6);
@@ -13511,7 +13514,7 @@ function drawstageselect() {
                             dudo = 0;
                     }
                 }
-			if (drawbutton(8, (canw - (510 * avm)), ((720 * mh) - (180 * avm)), 220, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 1, "Practice ", 22, 0.9, null, 0, false)) {
+			if ((drawbutton(8, (canw - (510 * avm)), ((720 * mh) - (180 * avm)), 220, 60, "rgb(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + ")", "rgb(" + rgb2[0] + "," + rgb2[1] + "," + rgb2[2] + ")", "rgb(" + rgb3[0] + "," + rgb3[1] + "," + rgb3[2] + ")", "rgb(" + rgb4[0] + "," + rgb4[1] + "," + rgb4[2] + ")", 1, "Practice ", 22, 0.9, null, 0, false)) || ((shift) && (enter))) {
 					setworld(snap, fogc, lvx, lvy, lvz, fogdist);
 					gameplayStart();
 					pauseMainMenuMusic();

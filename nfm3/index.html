@@ -90,6 +90,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
       var mdown = false;
       var enter = 0;
 	  var escape = false;
+	  var shift = false;
 
       function msmove(evt) {
         var rect = canvas2D.getBoundingClientRect();
@@ -189,6 +190,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
         }
 		if (k == 16) {
           u[0].airShift = true;
+		  shift = true;
         }
 		
 		if (k == 38) {
@@ -280,6 +282,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
         }
 		if (k == 16) {
           u[0].airShift = false;
+		  shift = false;
         }
 		
 		if (k == 38) {
