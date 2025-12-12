@@ -30,7 +30,7 @@ dynamicFOV = false;
 tipsAlwaysEnabled = true;
 animateCrashes = false;
 carSelectSmoke = false;
-handBrakeStunt = false;
+handBrakeStunt = [];
 flyingCars = false;
 lbL = false;
 lbR = false;
@@ -7123,9 +7123,9 @@ function drive() {
         }
 		if (!dest[c]) {
 			if (loop[c] == 2) {
-				if (u[c].handb || handBrakeStunt || !requireHandbrakeForStunts) { //handbrake requirement
+				if (u[c].handb || handBrakeStunt[c] || !requireHandbrakeForStunts) { //handbrake requirement
 					if (!flyingCars) {
-						handBrakeStunt = true; //this is so if the handbrake is released, your car doesnt just freeze
+						handBrakeStunt[0] = true; //this is so if the handbrake is released, your car doesnt just freeze
 						if  ((!actu[c]) || (requireHandbrakeForStunts)) {
 							if (u[c].up) {
 								if (ucomp[c] == 0) {
@@ -7218,7 +7218,7 @@ function drive() {
 					if ((flyingCars) || (carsCanFly) && (u[0].airShift)) {
 						flyingCars = true;
 						if  ((!actu[c]) || (requireHandbrakeForStunts)) {
-							handBrakeStunt = true; //this is so if the handbrake is released, your car doesnt just freeze
+							handBrakeStunt[c] = true; //this is so if the handbrake is released, your car doesnt just freeze
 							gtouch[c] = true;
 							wtouch[c] = true;
 							carIsGrounded[c] = true;
@@ -7368,7 +7368,7 @@ function drive() {
                     }
                 }
 				if (loop[c] == 0) {
-					handBrakeStunt = false; //this has to be when the car is driving on the road?
+					handBrakeStunt[c] = false; //this has to be when the car is driving on the road?
 					flyingCars = false;
 				}
                 if (loop[c] == -1) {
@@ -11953,7 +11953,7 @@ function drawinter() {
                 }
             }
         }
-		//rd.fillText(("loop " + loop[0]), (130 * avm), (100 * avm)); //debug string
+		rd.fillText(("loop " + loop[0] + " | hbStunt " + handBrakeStunt[0]), (130 * avm), (100 * avm)); //debug string
 		console.log(loop[0]);
         var lalign = (canw - (290 * avm));
         if ((canw / canh) < 1.3) {
