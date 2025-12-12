@@ -12,6 +12,7 @@ if (typeof customConfigLoaded === 'undefined') {
 	var practiceGame = false;
 	var nfm1 = false;
 	var carsCanFly = false; //launch your car off a jump and hit shift + spacebar
+	var gravity = 0.7;
 	var instantRaceStart = false;
 	var instantCarSelect = true;
 	var requireHandbrakeForStunts = "auto";
@@ -22,6 +23,8 @@ if (typeof customConfigLoaded === 'undefined') {
 }
 loadTheMusic(); //defined in madloader, should only be run when monoMusic is defined!
 init();
+
+dynamicFOV = false;
 
 //dont interact with these defaults
 tipsAlwaysEnabled = true;
@@ -36,6 +39,10 @@ newStageDown = false;
 newCarUp = false;
 newCarDown = false;
 hotStart = false;
+oldSpeed = 0;
+speedDifference = 0;
+slowDownFOV = 0;
+speedUpFOV = 0;
 
 /*
 nothing must pass this line...
@@ -3236,11 +3243,29 @@ var td = false;
 var htrns = 0;
 var updateframe = false;
 function gameworks() {
-    var fieldOfView = ((FOV * Math.PI) / 180);
+	
+	if (dynamicFOV) {
+		var fieldOfView = (((FOV + speed[0] / 1.4) * Math.PI) / 180);
+		speedDifference = Math.abs(speed[0] - oldSpeed);
+		if (speed[0] > oldSpeed) {
+			//console.log("Accelerated by " + speedDifference + "!");
+			oldSpeed = (speed[0] + oldSpeed) * 0.51
+			var fieldOfView = (((FOV + oldSpeed / 1.4) * Math.PI) / 180);
+		}
+		if (speed[0] < oldSpeed) {
+			//console.log("Decelerated by " + speedDifference + "!");
+			oldSpeed = (speed[0] + oldSpeed) * 0.49;
+			var fieldOfView = (((FOV + oldSpeed / 1.4) * Math.PI) / 180);
+		}
+	} else {
+		var fieldOfView = ((FOV * Math.PI) / 180);
+	}
+	
     var aspect = (canw / canh);
     var zNear = 0.1;
     var zFar = 7000;
     cmat = mat4.create();
+
     mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
     onelec = false;
     if (fase == 7) {
@@ -7025,7 +7050,7 @@ function drive() {
             lcomp[c] = 0;
             rcomp[c] = 0;
         }
-        if (c == 0) { //setting this to 99 seems to fix tunting even more?? needs further testing
+        if (c == 0) { //setting this to 99 seems to fix stunting even more?? needs further testing
             if (!wtouch[c]) {
                 if (u[c].up) {
                     if (!actu[c]) {
@@ -7342,9 +7367,11 @@ function drive() {
                         }
                     }
                 }
-                if (loop[c] == -1) {
+				if (loop[c] == 0) {
 					handBrakeStunt = false; //this has to be when the car is driving on the road?
 					flyingCars = false;
+				}
+                if (loop[c] == -1) {
                     if (car[c].y > 15) {
                         if (u[c].left) {
                             if (!pl[c]) {
@@ -7509,7 +7536,7 @@ function drive() {
             kx[i] = (car[c].keyx[i] + car[c].x);
             ky[i] = (keyy + car[c].y);
             kz[i] = (car[c].z + car[c].keyz[i]);
-            scy[c][i] -= (0.7 * m);
+            scy[c][i] -= (gravity * m); //gravity!! 
         }
         rotate(kx, ky, car[c].x, car[c].y, pxy[c], 4);
         rotate(ky, kz, car[c].y, car[c].z, pzy[c], 4);
@@ -11926,6 +11953,8 @@ function drawinter() {
                 }
             }
         }
+		//rd.fillText(("loop " + loop[0]), (130 * avm), (100 * avm)); //debug string
+		console.log(loop[0]);
         var lalign = (canw - (290 * avm));
         if ((canw / canh) < 1.3) {
             lalign = (canw - (200 * avm));

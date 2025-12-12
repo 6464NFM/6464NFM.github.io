@@ -6,6 +6,7 @@ var monoMusic = true;
 var practiceGame = false;
 var nfm1 = true;
 var carsCanFly = true; //launch your car off a jump and hit shift + spacebar
+var gravity = 0.7;
 var instantRaceStart = true;
 var instantCarSelect = true;
 var requireHandbrakeForStunts = "auto";
