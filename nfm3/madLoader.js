@@ -14,10 +14,17 @@ function onPageInteraction() {
 		script_tag.src = "configs/" + whatConfig + ".js";
 		document.head.appendChild(script_tag);
 		
-		var script_tag = document.createElement('script');
-		script_tag.type = 'text/javascript';
-		script_tag.src = "needmad.js";
-		document.head.appendChild(script_tag);
+		if (whatConfig == "testing") {
+			var script_tag = document.createElement('script');
+			script_tag.type = 'text/javascript';
+			script_tag.src = "needtesting.js";
+			document.head.appendChild(script_tag);
+		} else {
+			var script_tag = document.createElement('script');
+			script_tag.type = 'text/javascript';
+			script_tag.src = "needmad.js";
+			document.head.appendChild(script_tag);
+		}
 		
 		const loadingHelper = `<div class="toolsContainer" id="toolsContainer"><d-button class="openButton" onclick="dataload = datacnt;">Click/Tap to Force Load Game (WARNING: Could BREAK SHIT!)</d-button></div>`;
 document.body.insertAdjacentHTML('afterbegin', loadingHelper);
