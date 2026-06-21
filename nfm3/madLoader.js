@@ -19,6 +19,7 @@ function onPageInteraction() {
 			script_tag.type = 'text/javascript';
 			script_tag.src = "needtesting.js";
 			document.head.appendChild(script_tag);
+			unlocked = 17;
 		} else {
 			var script_tag = document.createElement('script');
 			script_tag.type = 'text/javascript';
