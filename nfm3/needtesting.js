@@ -4,7 +4,6 @@ if (!isSecureContext) alert("NFM will not run outside of secure context!!! pleas
 rel1 = 0;
 rel2 = 0;
 stageLightsOn = false;
-unlocked = 17;
 /* ----- original modded files by Kirtide, HD textures by Maxine, further maddened by dmack6464 ----- */
 
 if (typeof customConfigLoaded === 'undefined') {
@@ -679,6 +678,8 @@ function loadOldRad(file, rad) {
                 if (line === "<p>") {
                     fsVal = 1; // Reset per polygon
 					isDecal = false;
+					isHeadlight = false;
+					isBrakeLight = false;
 					isLight = false;
                     continue;
                 }
@@ -700,10 +701,14 @@ function loadOldRad(file, rad) {
                 if (line.startsWith("fs(")) {
                         fsVal = parseInt(line.substring(3, line.indexOf(")")));
                 }
-				// Detect light tags (supports lightF, lightF., etc.)
-                if (line.includes("lightF") || line.includes("lightB") || line.includes("light")) {
-                    isLight = true;
-                }
+				// Detect specific light types based on NFM tags
+				if (line.includes("lightB") || line.includes("lightBrake")) {
+					isBrakeLight = true;
+					isLight = true;
+				} else if (line.includes("lightF") || line.includes("light")) {
+					isHeadlight = true;
+					isLight = true;
+				}
                 // Detect negative gr values (e.g., gr(-14) or gr(-25))
                 if (line.startsWith("gr(")) {
                     var grVal = parseInt(line.substring(3, line.indexOf(")")));
@@ -796,15 +801,21 @@ function loadOldRad(file, rad) {
                                 
                                 // Overwrite placeholder normals for all vertices in this sub-loop
 								
-								normalScale = 1.0;
+								// Inside loadOldRad sub-loop vertex calculation...
+								
+								isLight = isHeadlight || isBrakeLight;
+
+								var normalScale = 1.0;
 								if (isDecal) normalScale = 2.0;
-								if (isLight) normalScale = 3.0;
-                                for (var k = 0; k < subLoop.length; k++) {
-                                    var vi = subLoop[k];
-                                    norms[vi * 3] = pNormal[0] * normalScale;
-                                    norms[vi * 3 + 1] = pNormal[1] * normalScale;
-                                    norms[vi * 3 + 2] = pNormal[2] * normalScale;
-                                }
+								if (isHeadlight) normalScale = 3.0;
+								if (isBrakeLight) normalScale = 4.0;
+
+								for (var k = 0; k < subLoop.length; k++) {
+									var vi = subLoop[k];
+									norms[vi * 3] = pNormal[0] * normalScale;
+									norms[vi * 3 + 1] = pNormal[1] * normalScale;
+									norms[vi * 3 + 2] = pNormal[2] * normalScale;
+								}
                                 
                                 // 5. Triangulate clean, symmetrical polygon structures independently on local best plane
                                 var polyTriangles = triangulatePolygon(subLoopVerts3D);
@@ -2152,9 +2163,16 @@ function drawrad3D(rad) {
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.ibuf);
     gl.useProgram(programInfo[pro].program);
-	// --- Safe Uniform Guard for Program 5 ---
-    if (pro == 5 && programInfo[5].uniformLocations.applySnapFilter) {
-        gl.uniform1f(programInfo[5].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
+
+    // --- Safe Uniform Guard for Program 5 ---
+    if (pro == 5) {
+        if (programInfo[5].uniformLocations.applySnapFilter) {
+            gl.uniform1f(programInfo[5].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
+        }
+        if (programInfo[5].uniformLocations.uBraking) {
+            var brakingValue = rad.isBraking ? 1.0 : 0.0;
+            gl.uniform1f(programInfo[5].uniformLocations.uBraking, brakingValue);
+        }
     }
 
     gl.uniformMatrix4fv(programInfo[pro].uniformLocations.projectionMatrix, false, cmat);
@@ -2323,6 +2341,8 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
     fsSource[4] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
     
     // Custom Flat Shading Shader for legacy colored .rad models
+    // custom vertex shader programInfo[5] inside setworld...
+    // Custom Flat Shading Shader for legacy colored .rad models
     vsSource[5] = `
         attribute vec4 aVertexPosition; 
         attribute vec4 aVertexColor; 
@@ -2331,6 +2351,7 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
         uniform mat4 uProjectionMatrix; 
         uniform mat4 uNormalMatrix; 
         uniform float applySnapFilter; 
+        uniform float uBraking; 
         varying lowp vec4 vColor; 
         varying vec3 v_posf; 
         void main(void) { 
@@ -2340,9 +2361,10 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             float normalLength = length(aVertexNormal);
             
             // --- Normal-Length Decoder ---
-            // If scale is > 1.5, it's a decal. If scale is > 2.5, it is also a light.
             bool isDecal = (normalLength > 1.5);
-            bool isLight = (normalLength > 2.5); 
+            bool isHeadlight = (normalLength > 2.5 && normalLength < 3.5);
+            bool isBrakeLight = (normalLength > 3.5);
+            bool isLight = isHeadlight || isBrakeLight; // Resolves compile error
             // ------------------------------
             
             vec3 rawNormal = aVertexNormal;
@@ -2358,12 +2380,11 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             }
             
             // --- Clip-Space Depth Bias for Decals ---
-            // Applied to ALL decals (including non-light ones)
             if (isDecal) {
                 gl_Position.z -= 0.00001 * gl_Position.w; 
             }
             
-			// lighting values!
+            // Lighting value for models!
             float f1 = transformedNormal.y + 0.1; 
             f1 = clamp(f1, 0.45, 1.0);
             
@@ -2371,13 +2392,27 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             vec3 finalColor = aVertexColor.rgb;
             bool isGlass = (aVertexColor.a < 0.95);
             
-            if (!isGlass) {
-                // Non-light decals (factor 1.0) always get filtered.
-                // Light decals (factor applySnapFilter) glow when lights are on.
-                float factor = isLight ? applySnapFilter : 1.0;
-                
-                vec3 snapFactor = vec3(` + snap[0] + `, ` + snap[1] + `, ` + snap[2] + `);
-                finalColor = clamp(finalColor + finalColor * (snapFactor * factor), 0.0, 1.0);
+            float lightIntensity = 0.0;
+            bool activeLight = false;
+            
+            if (isHeadlight) {
+                lightIntensity = 1.0 - applySnapFilter;
+                activeLight = (lightIntensity > 0.0);
+            } else if (isBrakeLight) {
+                float stageLightsOn = 1.0 - applySnapFilter;
+                lightIntensity = mix(stageLightsOn * 0.35, 1.0, uBraking);
+                activeLight = (lightIntensity > 0.0);
+            }
+            
+            if (activeLight) {
+                f1 = 1.0;
+                finalColor = finalColor * lightIntensity;
+            } else {
+                if (!isGlass) {
+                    float factor = isLight ? applySnapFilter : 1.0;
+                    vec3 snapFactor = vec3(` + snap[0] + `, ` + snap[1] + `, ` + snap[2] + `);
+                    finalColor = clamp(finalColor + finalColor * (snapFactor * factor), 0.0, 1.0);
+                }
             }
             
             vColor = vec4(finalColor * f1, aVertexColor.a); 
@@ -2461,7 +2496,8 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             projectionMatrix: gl.getUniformLocation(shaderProgram[5], 'uProjectionMatrix'),
             modelViewMatrix: gl.getUniformLocation(shaderProgram[5], 'uModelViewMatrix'),
             normalMatrix: gl.getUniformLocation(shaderProgram[5], 'uNormalMatrix'),
-            applySnapFilter: gl.getUniformLocation(shaderProgram[5], 'applySnapFilter'), // --- Added here ---
+            applySnapFilter: gl.getUniformLocation(shaderProgram[5], 'applySnapFilter'),
+			uBraking: gl.getUniformLocation(shaderProgram[5], 'uBraking'),
         }
     };
 }
@@ -5067,6 +5103,7 @@ function render(now) {
                 carobj[car[c].typ].y = car[c].y;
                 carobj[car[c].typ].z = car[c].z;
                 carobj[car[c].typ].mat = car[c].mat;
+				carobj[car[c].typ].isBraking = (u[c].down || u[c].handb);
                 drawrad3D(carobj[car[c].typ]);
                 for (var w = 0; w < 4; w++) {
                     var k = 0;
