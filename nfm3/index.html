@@ -74,7 +74,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
     <canvas id="canvas2D" style="position: absolute; left: 0px; top: 0px; padding-left: 0; padding-right: 0; margin-right: auto; margin-left: auto; display: block; width: 1280px; height: 720px;" width="1280" height="720"></canvas>
     <script>
       var canvas3D = document.querySelector('#canvas3D');
-      var gl = (canvas3D.getContext('webgl') || canvas3D.getContext('experimental-webgl'));
+      var gl = (canvas3D.getContext('webgl'/*, { antialias: false }*/) || canvas3D.getContext('experimental-webgl'));
       var canvas2D = document.querySelector('#canvas2D');
       canvas2D.addEventListener("mousedown", msdown, false);
       canvas2D.addEventListener('mousemove', msmove, false);
@@ -331,7 +331,7 @@ function allDataLoaded() { /* toolsContainer is loaded by madLoader!!! */
         if (k == 86) {
           if (fase == 7) {
             camode++;
-            if (camode == 5) {
+            if (camode == 6) {
               camode = 0;
             }
           }
