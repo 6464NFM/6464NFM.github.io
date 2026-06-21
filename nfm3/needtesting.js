@@ -4,6 +4,7 @@ if (!isSecureContext) alert("NFM will not run outside of secure context!!! pleas
 rel1 = 0;
 rel2 = 0;
 stageLightsOn = false;
+unlocked = 17;
 /* ----- original modded files by Kirtide, HD textures by Maxine, further maddened by dmack6464 ----- */
 
 if (typeof customConfigLoaded === 'undefined') {
