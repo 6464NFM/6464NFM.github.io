@@ -681,6 +681,8 @@ function loadOldRad(file, rad) {
 					isHeadlight = false;
 					isBrakeLight = false;
 					isLight = false;
+					isGr13 = false;
+					isGr18 = false;
                     continue;
                 }
                 
@@ -714,6 +716,12 @@ function loadOldRad(file, rad) {
                     var grVal = parseInt(line.substring(3, line.indexOf(")")));
                     if (grVal < 0) {
                         isDecal = true;
+					}
+					if (grVal === -13) {
+						isGr13 = true;
+					}
+					if (grVal === -18) {
+						isGr18 = true;
 					}
 				}
 				
@@ -809,6 +817,8 @@ function loadOldRad(file, rad) {
 								if (isDecal) normalScale = 2.0;
 								if (isHeadlight) normalScale = 3.0;
 								if (isBrakeLight) normalScale = 4.0;
+								if (isGr13) normalScale = 13.0;
+								if (isGr18) normalScale = 18.0;
 
 								for (var k = 0; k < subLoop.length; k++) {
 									var vi = subLoop[k];
@@ -2103,6 +2113,7 @@ function drawparticle(rad) {
 
 function drawrad3D(rad) {
     if (!rad.loaded) return;
+	lastCPActive = (onlastcheck && rad.isLastCP);
 
     if (rad.alpha) {
         gl.enable(gl.BLEND);
@@ -2173,6 +2184,12 @@ function drawrad3D(rad) {
             var brakingValue = rad.isBraking ? 1.0 : 0.0;
             gl.uniform1f(programInfo[5].uniformLocations.uBraking, brakingValue);
         }
+        if (programInfo[5].uniformLocations.uTime) {
+            gl.uniform1f(programInfo[5].uniformLocations.uTime, chkflk); // Pass chkflk as time counter
+        }
+        if (programInfo[5].uniformLocations.uLastCheckRemaining) {
+            gl.uniform1f(programInfo[5].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
+        }
     }
 
     gl.uniformMatrix4fv(programInfo[pro].uniformLocations.projectionMatrix, false, cmat);
@@ -2198,11 +2215,7 @@ function drawrad3D(rad) {
     gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_SHORT, 0);
 
     // === BLACK OUTLINES FOR LEGACY .rad MODELS ===
-    // === BLACK OUTLINES FOR LEGACY .rad MODELS ===
     if (rad.hasEdges && rad.edgebuf && rad.edgeColorBuf) {
-        
-        // If the model uses stonecold(), we enable blending to make the outlines transparent.
-        // Otherwise, they remain solid.
         if (rad.hasStonecold) {
             gl.enable(gl.BLEND);
             gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -2210,11 +2223,18 @@ function drawrad3D(rad) {
             gl.disable(gl.BLEND);
         }
         
-        gl.useProgram(programInfo[0].program); // Uses Program 0 (unshaded)
+        gl.useProgram(programInfo[0].program); 
         
         gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
         gl.vertexAttribPointer(programInfo[0].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexPosition);
+        
+        // Pass normal attributes to Program 0 so gr(-13) outlines can be read
+        if (programInfo[0].attribLocations.vertexNormal !== undefined && programInfo[0].attribLocations.vertexNormal !== -1) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, rad.nbuf);
+            gl.vertexAttribPointer(programInfo[0].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexNormal);
+        }
         
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.edgebuf);
         
@@ -2225,10 +2245,17 @@ function drawrad3D(rad) {
         gl.uniformMatrix4fv(programInfo[0].uniformLocations.projectionMatrix, false, cmat);
         gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, rad.mat);
         
+        // Pass the live checkpoint remaining flag to Program 0
+        if (programInfo[0].uniformLocations.uLastCheckRemaining) {
+            gl.uniform1f(programInfo[0].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
+        }
+		if (programInfo[0].uniformLocations.uTime) {
+            gl.uniform1f(programInfo[0].uniformLocations.uTime, chkflk);
+        }
+        
         gl.lineWidth(2.5);
         gl.drawElements(gl.LINES, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
         
-        // Clean up: Disable blending if it was enabled, to keep WebGL state clean for the next draw call
         if (rad.hasStonecold) {
             gl.disable(gl.BLEND);
         }
@@ -2329,7 +2356,49 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
     var fogend = fogdist;
     var vsSource = [];
     var fsSource = [];
-    vsSource[0] = `attribute vec4 aVertexPosition; attribute vec4 aVertexColor; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying lowp vec4 vColor; varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vColor = aVertexColor; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
+
+    // Custom Outlines Shader (Program 0)
+    vsSource[0] = `
+        attribute vec4 aVertexPosition; 
+        attribute vec4 aVertexColor; 
+        attribute vec3 aVertexNormal; 
+        uniform mat4 uModelViewMatrix; 
+        uniform mat4 uProjectionMatrix; 
+        uniform float uLastCheckRemaining; 
+        uniform float uTime; 
+        varying lowp vec4 vColor; 
+        varying vec3 v_posf; 
+        void main(void) { 
+            gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; 
+            v_posf = (uModelViewMatrix * aVertexPosition).xyz; 
+            
+            float normalLength = length(aVertexNormal);
+            bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
+            bool isGr18 = (normalLength > 17.5 && normalLength < 18.5);
+            
+            // Default color is the bound edge color (black)
+            vColor = aVertexColor; 
+            
+            // Collapse coordinates for gr(-13) if last checkpoint is NOT active
+            if (isGr13 && uLastCheckRemaining < 0.5) {
+                gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+            }
+            
+            if (isGr18) {
+                // Instantaneous digital flickering in unison
+                float flicker = mod(floor(uTime * 5.0), 4.0); // Convert 0.2 frame increments into distinct steps
+                vec3 glowColor = vec3(0.0, 0.5, 1.0); // Standard Blue
+                if (flicker == 1.0) {
+                    glowColor = vec3(0.2, 0.9, 1.0); // Bright Electric Cyan
+                } else if (flicker == 2.0) {
+                    glowColor = vec3(0.0, 0.2, 0.8); // Deep Blue
+                } else if (flicker == 3.0) {
+                    glowColor = vec3(0.8, 0.9, 1.0); // Vibrant Electric White
+                }
+                vColor = vec4(glowColor, 1.0);
+            }
+        }`;
+    
     fsSource[0] = `precision mediump float; varying vec3 v_posf; varying lowp vec4 vColor; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);gl_FragColor = mix(vColor, u_fogColor, fogAmount); }`;
     vsSource[1] = `attribute vec4 aVertexPosition; attribute vec3 aVertexNormal; attribute vec2 aTextureCoord; uniform mat4 uNormalMatrix; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting;varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight = vec3(` + ambcol[0] + `,` + ambcol[1] + `,` + ambcol[2] + `); highp vec3 directionalLightColor = vec3(` + defcol[0] + `,` + defcol[1] + `,` + defcol[2] + `); highp vec3 directionalVector = normalize(vec3(` + dirvec[0] + `,` + dirvec[1] + `,` + dirvec[2] + `)); highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0); vLighting = ambientLight + (directionalLightColor * directional); v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
     fsSource[1] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
@@ -2340,9 +2409,8 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
     vsSource[4] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight=vec3(1,1,1); vLighting = ambientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
     fsSource[4] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
     
-    // Custom Flat Shading Shader for legacy colored .rad models
-    // custom vertex shader programInfo[5] inside setworld...
-    // Custom Flat Shading Shader for legacy colored .rad models
+    // Custom Flat Shading Shader (Program 5)
+    // Custom Flat Shading Shader (Program 5)
     vsSource[5] = `
         attribute vec4 aVertexPosition; 
         attribute vec4 aVertexColor; 
@@ -2352,6 +2420,7 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
         uniform mat4 uNormalMatrix; 
         uniform float applySnapFilter; 
         uniform float uBraking; 
+        uniform float uLastCheckRemaining; 
         varying lowp vec4 vColor; 
         varying vec3 v_posf; 
         void main(void) { 
@@ -2363,9 +2432,15 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             // --- Normal-Length Decoder ---
             bool isDecal = (normalLength > 1.5);
             bool isHeadlight = (normalLength > 2.5 && normalLength < 3.5);
-            bool isBrakeLight = (normalLength > 3.5);
-            bool isLight = isHeadlight || isBrakeLight; // Resolves compile error
+            bool isBrakeLight = (normalLength > 3.5 && normalLength < 4.5);
+            bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
+            bool isLight = isHeadlight || isBrakeLight;
             // ------------------------------
+            
+            // Collapse gr(-13) geometry if last checkpoint is NOT remaining
+            if (isGr13 && uLastCheckRemaining < 0.5) {
+                gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+            }
             
             vec3 rawNormal = aVertexNormal;
             if (normalLength > 0.1) {
@@ -2373,8 +2448,6 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             }
             
             vec3 transformedNormal = normalize((uNormalMatrix * vec4(rawNormal, 0.0)).xyz); 
-            
-            // Camera-facing normal correction
             if (dot(transformedNormal, normalize(v_posf)) > 0.0) {
                 transformedNormal = -transformedNormal;
             }
@@ -2384,8 +2457,8 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
                 gl_Position.z -= 0.00001 * gl_Position.w; 
             }
             
-            // Lighting value for models!
-            float f1 = transformedNormal.y + 0.1; 
+            // lighting value for models
+            float f1 = transformedNormal.y + 0.08; 
             f1 = clamp(f1, 0.45, 1.0);
             
             // --- Stage Snap Color Filter ---
@@ -2400,7 +2473,7 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
                 activeLight = (lightIntensity > 0.0);
             } else if (isBrakeLight) {
                 float stageLightsOn = 1.0 - applySnapFilter;
-                lightIntensity = mix(stageLightsOn * 0.35, 1.0, uBraking);
+                lightIntensity = mix(stageLightsOn * 0.50, 1.0, uBraking);
                 activeLight = (lightIntensity > 0.0);
             }
             
@@ -2429,10 +2502,13 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
         attribLocations: {
             vertexPosition: gl.getAttribLocation(shaderProgram[0], 'aVertexPosition'),
             vertexColor: gl.getAttribLocation(shaderProgram[0], 'aVertexColor'),
+            vertexNormal: gl.getAttribLocation(shaderProgram[0], 'aVertexNormal'),
         },
         uniformLocations: {
             projectionMatrix: gl.getUniformLocation(shaderProgram[0], 'uProjectionMatrix'),
             modelViewMatrix: gl.getUniformLocation(shaderProgram[0], 'uModelViewMatrix'),
+            uLastCheckRemaining: gl.getUniformLocation(shaderProgram[0], 'uLastCheckRemaining'),
+            uTime: gl.getUniformLocation(shaderProgram[0], 'uTime'),
         }
     };
     programInfo[1] = {
@@ -2498,6 +2574,8 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
             normalMatrix: gl.getUniformLocation(shaderProgram[5], 'uNormalMatrix'),
             applySnapFilter: gl.getUniformLocation(shaderProgram[5], 'applySnapFilter'),
 			uBraking: gl.getUniformLocation(shaderProgram[5], 'uBraking'),
+			uTime: gl.getUniformLocation(shaderProgram[5], 'uTime'), // Added
+			uLastCheckRemaining: gl.getUniformLocation(shaderProgram[5], 'uLastCheckRemaining'), // Added
         }
     };
 }
@@ -3543,14 +3621,14 @@ function cpanimate() {
         if (flipit) {
             mat4.rotate(cptext.mat, cptext.mat, (180 * (Math.PI / 180)), [0, 1, 0]);
         }
-        if (onlastcheck) {
+        /*if (onlastcheck) {
             for (var i = 0; i < 16; i++) {
                 fntext.mat[i] = cptext.mat[i];
             }
             fntext.x = obo[cp.obn[oncheckpoint]].x;
             fntext.y = (obo[cp.obn[oncheckpoint]].y + 52);
             fntext.z = obo[cp.obn[oncheckpoint]].z;
-        }
+        }*/
     }
 }
 var nchp = 0;
@@ -5047,6 +5125,7 @@ function render(now) {
                 build[obo[i].typ].y = obo[i].y;
                 build[obo[i].typ].z = obo[i].z;
                 build[obo[i].typ].mat = obo[i].mat;
+				build[obo[i].typ].isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
                 drawrad3D(build[obo[i].typ]);
                 if (obo[i].typ == 29) {
                     gl.disable(gl.CULL_FACE);
@@ -5236,6 +5315,7 @@ function render(now) {
                     build[obo[i].typ].y = obo[i].y;
                     build[obo[i].typ].z = obo[i].z;
                     build[obo[i].typ].mat = obo[i].mat;
+					build[obo[i].typ].isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
                     drawrad3D(build[obo[i].typ]);
                 }
                 for (var i = 0; i < nf; i++) {
