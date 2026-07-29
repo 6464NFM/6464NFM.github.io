@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFM Model Viewer & Editor</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        #ui { position: absolute; top: 15px; left: 15px; z-index: 10; background: rgba(20, 20, 20, 0.85); padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); max-width: 300px; border: 1px solid #333; backdrop-filter: blur(4px); }
+        #ui h2 { margin: 0 0 10px 0; font-size: 1.2rem; color: #4facfe; }
+        #ui p { margin: 0 0 15px 0; font-size: 0.9rem; color: #ccc; }
+        
+        #editor-ui { position: absolute; top: 15px; right: 15px; z-index: 10; background: rgba(20, 20, 20, 0.85); padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); width: 240px; border: 1px solid #333; display: none; backdrop-filter: blur(4px); max-height: 90vh; overflow-y: auto;}
+        #editor-ui h3 { margin: 0 0 15px 0; font-size: 1.1rem; color: #ff00ff; }
+        
+        .input-group { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .input-group label { color: #ccc; font-size: 0.9rem; font-weight: bold; }
+        .input-group input, .input-group select { width: 65%; background: #222; color: #fff; border: 1px solid #555; padding: 4px 6px; border-radius: 3px; font-family: monospace; }
+        .input-group input:focus, .input-group select:focus { outline: none; border-color: #4facfe; }
+        
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 5px; }
+        .btn-grid button { padding: 6px; font-size: 0.8rem; }
+        
+        #status { font-size: 0.85rem; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 4px; margin-bottom: 15px; word-break: break-all; }
+        
+        button { width: 100%; padding: 10px; font-size: 1rem; font-weight: bold; cursor: pointer; background: #4facfe; color: white; border: none; border-radius: 4px; transition: background 0.2s; }
+        button:hover:not(:disabled) { background: #388ee0; }
+        button:disabled { background: #555; color: #888; cursor: not-allowed; }
+        .btn-action { background: #ff00ff; margin-top: 10px; }
+        .btn-action:hover:not(:disabled) { background: #cc00cc; }
+
+        #canvas-container { width: 100vw; height: 100vh; display: block; cursor: crosshair; }
+        #drag-overlay { display: none; position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(79, 172, 254, 0.2); z-index: 100; border: 4px dashed #4facfe; box-sizing: border-box; pointer-events: none; }
+        
+        .checkbox-group { margin-top: 15px; font-size: 0.85rem; color: #ccc; }
+        .checkbox-group input { margin-right: 8px; cursor: pointer; }
+        hr { border: none; border-top: 1px solid #444; margin: 15px 0; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="drag-overlay"></div>
+    
+    <div id="ui">
+        <h2>NFM Model Viewer</h2>
+        <p>Drag & Drop a <b>.rad</b>, <b>.r3d</b>, or <b>.xrad</b> file anywhere.</p>
+        <p style="font-size: 0.8rem; color: #aaa;">Click a polygon to edit its structure.</p>
+        <div id="status">Waiting for file...</div>
+        <button id="exportBtn" disabled>Export to .xrad</button>
+        <div class="checkbox-group">
+            <label><input type="checkbox" id="chkHighlightBackfaces" checked> Highlight backwards polygons (Red)</label><br><br>
+            <label><input type="checkbox" id="chkAutoFix" checked> Apply Legacy Stage Auto-Fixes to imported .rad files</label>
+        </div>
+    </div>
+
+    <div id="editor-ui">
+        <h3>Edit Normal</h3>
+        <div class="input-group">
+            <label for="normX">NX:</label>
+            <input type="number" step="0.0001" id="normX">
+        </div>
+        <div class="input-group">
+            <label for="normY">NY:</label>
+            <input type="number" step="0.0001" id="normY">
+        </div>
+        <div class="input-group">
+            <label for="normZ">NZ:</label>
+            <input type="number" step="0.0001" id="normZ">
+        </div>
+        
+        <div class="btn-grid">
+            <button id="btnFlipX">Flip X</button>
+            <button id="btnFlipY">Flip Y</button>
+            <button id="btnFlipZ">Flip Z</button>
+            <button id="btnFlipAll">Invert All</button>
+            <button id="btnCopyNorm">Copy</button>
+            <button id="btnPasteNorm">Paste</button>
+        </div>
+        <button id="btnApplyNorm" class="btn-action">Apply Normal</button>
+
+        <hr>
+        <h3 style="color:#4facfe;">Transform Polygon</h3>
+        <div style="font-size: 0.85rem; color: #ccc;">Translate (Step Unit: <input type="number" id="tStep" value="0.1" style="width:40px; padding:2px; background:#222; color:#fff; border:1px solid #555;">)</div>
+        <div class="btn-grid">
+            <button onclick="nudgePoly(-1,0,0)">-X (Left)</button><button onclick="nudgePoly(1,0,0)">+X (Right)</button>
+            <button onclick="nudgePoly(0,-1,0)">-Y (Down)</button><button onclick="nudgePoly(0,1,0)">+Y (Up)</button>
+            <button onclick="nudgePoly(0,0,-1)">-Z (Fwd)</button><button onclick="nudgePoly(0,0,1)">+Z (Back)</button>
+        </div>
+
+        <div style="font-size: 0.85rem; color: #ccc; margin-top: 15px;">Rotate (Angle °: <input type="number" id="rStep" value="5" style="width:40px; padding:2px; background:#222; color:#fff; border:1px solid #555;">)</div>
+        <div class="btn-grid">
+            <button onclick="rotatePoly(-1,0,0)">Pitch (-X)</button><button onclick="rotatePoly(1,0,0)">Pitch (+X)</button>
+            <button onclick="rotatePoly(0,-1,0)">Yaw (-Y)</button><button onclick="rotatePoly(0,1,0)">Yaw (+Y)</button>
+            <button onclick="rotatePoly(0,0,-1)">Roll (-Z)</button><button onclick="rotatePoly(0,0,1)">Roll (+Z)</button>
+        </div>
+
+        <hr>
+        <h3 style="color:#4facfe;">Re-Triangulate</h3>
+        <p style="font-size: 0.75rem; color: #aaa; margin-top:-10px;">Preserves outer boundary and retriangulates inner geometry.</p>
+        <select id="selTriAlgo" style="width:100%; background:#222; color:#fff; border:1px solid #555; padding:4px; margin-bottom:8px;">
+            <option value="ear">Ear Clipping (NFM Standard)</option>
+            <option value="holes">Ear Clipping (Preserve Holes)</option>
+            <option value="ear_shortest">Ear Clipping (Shortest Diagonal)</option>
+            <option value="fan">Fan (Convex Only)</option>
+            <option value="strip">Strip / Zig-Zag (Roads)</option>
+            <option value="center">Center Point (Star / Wheels)</option>
+        </select>
+        <button onclick="retriangulatePoly()" class="btn-action" style="background:#ff8c00;">Re-Triangulate</button>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        // ========================================================
+        // 1. NFM Conversion Logic (.rad/.r3d -> .xrad)
+        // ========================================================
+        function convertModelToXRad(text) {
+            if (text.includes("v(") && text.includes("n(") && text.includes("p(") && !text.includes("<p>")) {
+                return convertR3DToXRad(text);
+            } else {
+                return convertRadToXRad(text);
+            }
+        }
+
+        function convertR3DToXRad(text) {
+            let flipx = -1, scale = 1.0, scaleX = 1.0;
+            let v_arr = [], n_arr = [], p_arr = [];
+
+            let lines = text.split('\n');
+            for (let line of lines) {
+                line = line.trim();
+                if (line.startsWith("flipX()")) flipx = 1;
+                if (line.startsWith("scale")) {
+                    let match = line.match(/-?\d+\.?\d*/);
+                    if (match) scale = parseFloat(match[0]);
+                }
+                if (line.startsWith("Xscale")) {
+                    let match = line.match(/-?\d+\.?\d*/);
+                    if (match) scaleX = parseFloat(match[0]);
+                }
+                
+                if (line.includes("v(")) v_arr = line.substring(line.indexOf("v(") + 2, line.indexOf(")v")).split(',').map(Number);
+                if (line.includes("n(")) n_arr = line.substring(line.indexOf("n(") + 2, line.indexOf(")n")).split(',').map(Number);
+                if (line.includes("p(")) p_arr = line.substring(line.indexOf("p(") + 2, line.indexOf(")p")).split(',').map(Number);
+            }
+
+            let outLines = [];
+            outLines.push("# .xrad Model (Converted from .r3d)");
+            outLines.push("# Translated smoothly to .rad coordinate space\n");
+
+            let globalVerts = [];
+            let vertMap = new Map();
+
+            function getOrAddVert(vIdx, nIdx) {
+                let key = `${vIdx}_${nIdx}`;
+                if (vertMap.has(key)) return vertMap.get(key);
+                
+                let x_eng = v_arr[vIdx*3] * scale * scaleX * flipx;
+                let y_eng = v_arr[vIdx*3+1] * scale;
+                let z_eng = v_arr[vIdx*3+2] * scale;
+
+                let rad_x = x_eng / -0.1;
+                let rad_y = y_eng / -0.1;
+                let rad_z = z_eng / 0.1;
+
+                let rad_nx = 0, rad_ny = 1, rad_nz = 0;
+                if (n_arr.length > 0) {
+                    rad_nx = n_arr[nIdx*3];
+                    rad_ny = n_arr[nIdx*3+1];
+                    rad_nz = n_arr[nIdx*3+2];
+                }
+
+                let newIdx = globalVerts.length;
+                globalVerts.push({x: rad_x, y: rad_y, z: rad_z, nx: rad_nx, ny: rad_ny, nz: rad_nz});
+                vertMap.set(key, newIdx);
+                return newIdx;
+            }
+
+            let t_out = [];
+            for (let i = 0; i < p_arr.length / 9; i++) {
+                let v0 = getOrAddVert(p_arr[i*9], p_arr[i*9 + 1]);
+                let v1 = getOrAddVert(p_arr[i*9 + 3], p_arr[i*9 + 4]);
+                let v2 = getOrAddVert(p_arr[i*9 + 6], p_arr[i*9 + 7]);
+                t_out.push(`t(${v0}, ${v1}, ${v2}, 0, 0)`);
+            }
+
+            for (let v of globalVerts) {
+                outLines.push(`v(${v.x.toFixed(4)}, ${v.y.toFixed(4)}, ${v.z.toFixed(4)}, ${v.nx.toFixed(4)}, ${v.ny.toFixed(4)}, ${v.nz.toFixed(4)})`);
+            }
+
+            outLines.push("\n<p>");
+            outLines.push("c(128, 128, 128, 255)");
+            outLines.push(...t_out);
+            outLines.push("</p>");
+
+            return outLines.join('\n');
+        }
+
+        function convertRadToXRad(radText) {
+            let lines = radText.split('\n');
+            let outLines = [];
+            let applyAutoFix = document.getElementById('chkAutoFix').checked;
+
+            outLines.push("# .xrad Model (Converted from .rad)");
+            outLines.push("# Triangulated exactly matching loadOldRad behavior.\n");
+
+            let engVerts = []; 
+            let rawVerts = []; 
+            let polys = [];
+            
+            let f = 1.0, f1 = 1.0, scaleX = 1.0, scaleY = 1.0, scaleZ = 1.0;
+            let hasStonecold = false;
+            let currentColor = [133, 186, 255, 255];
+            let currentPoly = null;
+            let fsVal = 1;
+
+            function extractNum(str) {
+                let match = str.match(/-?\d+\.?\d*/g);
+                return match ? parseFloat(match[0]) : 0;
+            }
+
+            for (let line of lines) {
+                line = line.trim();
+                if (!line || line.startsWith("//") || line.startsWith("#")) continue;
+
+                if (line.startsWith("stonecold") || line.startsWith("newstone")) hasStonecold = true;
+                else if (line.startsWith("div")) f = extractNum(line) / 10.0;
+                else if (line.startsWith("idiv")) f = extractNum(line) / 100.0;
+                else if (line.startsWith("iwid")) f1 = extractNum(line) / 100.0;
+                else if (line.startsWith("ScaleX")) scaleX = extractNum(line) / 100.0;
+                else if (line.startsWith("ScaleY")) scaleY = extractNum(line) / 100.0;
+                else if (line.startsWith("ScaleZ")) scaleZ = extractNum(line) / 100.0;
+                else if (line === "<p>" || line === "[p]") {
+                    currentPoly = { origIndices: [], color: [...currentColor], outType: 1, fsVal: 1, noOutline: false };
+                } else if (line === "</p>" || line === "[/p]") {
+                    if (currentPoly && currentPoly.origIndices.length >= 3) {
+                        currentPoly.fsVal = fsVal;
+                        polys.push(currentPoly);
+                    }
+                    currentPoly = null;
+                    fsVal = 1;
+                } else if (currentPoly) {
+                    if (line.startsWith("p(")) {
+                        let parts = line.substring(2, line.indexOf(")")).split(",");
+                        let rawX = parseFloat(parts[0]), rawY = parseFloat(parts[1]), rawZ = parseFloat(parts[2]);
+                        
+                        let scX = rawX * f * f1 * scaleX;
+                        let scY = rawY * f * scaleY;
+                        let scZ = rawZ * f * scaleZ;
+                        
+                        let engX = -scX * 0.1;
+                        let engY = -scY * 0.1;
+                        let engZ = scZ * 0.1;
+                        
+                        currentPoly.origIndices.push(engVerts.length);
+                        engVerts.push([engX, engY, engZ]);
+                        rawVerts.push([scX, scY, scZ]);
+                    } else if (line.startsWith("c(")) {
+                        let parts = line.substring(2, line.indexOf(")")).split(",");
+                        currentPoly.color = [parseInt(parts[0]||133), parseInt(parts[1]||186), parseInt(parts[2]||255), 255];
+                    } else if (line.startsWith("glass")) {
+                        currentPoly.color[3] = 102; 
+                    } else if (line.startsWith("noOutline")) {
+                        currentPoly.noOutline = true;
+                    } else if (line.startsWith("fs(")) {
+                        fsVal = extractNum(line);
+                    } else if (line.startsWith("lightF") || line.startsWith("light(")) {
+                        currentPoly.outType = 3;
+                    } else if (line.startsWith("lightB") || line.startsWith("lightBrake")) {
+                        currentPoly.outType = 4;
+                    } else if (line.startsWith("gr(")) {
+                        let grVal = extractNum(line);
+                        if (grVal < 0) currentPoly.outType = 2;
+                        if (grVal === -13) currentPoly.outType = 13;
+                        if (grVal === -18) currentPoly.outType = 18;
+                    }
+                } else if (line.startsWith("c(")) {
+                    let parts = line.substring(2, line.indexOf(")")).split(",");
+                    currentColor = [parseInt(parts[0]||133), parseInt(parts[1]||186), parseInt(parts[2]||255), 255];
+                }
+            }
+
+            if (hasStonecold) outLines.push("stonecold\n");
+
+            function distanceSq(p1, p2) { return (p1[0]-p2[0])**2 + (p1[1]-p2[1])**2 + (p1[2]-p2[2])**2; }
+
+            function splitAtRepeatedVertices(indicesList, tol) {
+                let loops = [];
+                function processLoop(loop) {
+                    for (let i = 0; i < loop.length; i++) {
+                        for (let j = i + 2; j < loop.length; j++) {
+                            if (distanceSq(engVerts[loop[i]], engVerts[loop[j]]) < tol) {
+                                let loop1 = loop.slice(i, j);
+                                let loop2 = loop.slice(0, i).concat(loop.slice(j));
+                                processLoop(loop1);
+                                processLoop(loop2);
+                                return;
+                            }
+                        }
+                    }
+                    if (loop.length >= 3) loops.push(loop);
+                }
+                processLoop(indicesList);
+                return loops;
+            }
+
+            function getBestProjectionPlane(indices) {
+                let area_yz = 0, area_xz = 0, area_xy = 0;
+                let n = indices.length;
+                for (let i = 0; i < n; i++) {
+                    let p1 = engVerts[indices[i]], p2 = engVerts[indices[(i + 1) % n]];
+                    area_yz += (p1[1] - p2[1]) * (p1[2] + p2[2]);
+                    area_xz += (p1[0] - p2[0]) * (p1[2] + p2[2]);
+                    area_xy += (p1[0] - p2[0]) * (p1[1] + p2[1]);
+                }
+                if (Math.abs(area_yz) >= Math.abs(area_xz) && Math.abs(area_yz) >= Math.abs(area_xy)) return 'yz';
+                if (Math.abs(area_xz) >= Math.abs(area_yz) && Math.abs(area_xz) >= Math.abs(area_xy)) return 'xz';
+                return 'xy';
+            }
+
+            function getIntersection2D(p1, p2, p3, p4) {
+                let denom = (p4[1] - p3[1]) * (p2[0] - p1[0]) - (p4[0] - p3[0]) * (p2[1] - p1[1]);
+                if (Math.abs(denom) < 1e-9) return null;
+                let ua = ((p4[0] - p3[0]) * (p1[1] - p3[1]) - (p4[1] - p3[1]) * (p1[0] - p3[0])) / denom;
+                let ub = ((p2[0] - p1[0]) * (p1[1] - p3[1]) - (p2[1] - p1[1]) * (p1[0] - p3[0])) / denom;
+                let eps = 1e-3;
+                if (ua > eps && ua < 1 - eps && ub > eps && ub < 1 - eps) return { ua, ub };
+                return null;
+            }
+
+            function splitLoop(indices, depth = 0) {
+                if (depth > 10) return [indices];
+                let n = indices.length;
+                if (n < 3) return [];
+                
+                let loopPlane = getBestProjectionPlane(indices);
+                let loop2D = indices.map(idx => {
+                    let v = engVerts[idx];
+                    return loopPlane === 'yz' ? [v[1], v[2]] : (loopPlane === 'xz' ? [v[0], v[2]] : [v[0], v[1]]);
+                });
+                
+                for (let i = 0; i < n; i++) {
+                    for (let j = i + 2; j < n; j++) {
+                        if (i === 0 && j === n - 1) continue;
+                        let inter = getIntersection2D(loop2D[i], loop2D[(i+1)%n], loop2D[j], loop2D[(j+1)%n]);
+                        if (inter) {
+                            let vI = engVerts[indices[i]], vIp1 = engVerts[indices[(i+1)%n]];
+                            let vJ = engVerts[indices[j]], vJp1 = engVerts[indices[(j+1)%n]];
+                            
+                            let pInter1 = [
+                                vI[0] + inter.ua * (vIp1[0] - vI[0]),
+                                vI[1] + inter.ua * (vIp1[1] - vI[1]),
+                                vI[2] + inter.ua * (vIp1[2] - vI[2])
+                            ];
+                            let pInter2 = [
+                                vJ[0] + inter.ub * (vJp1[0] - vJ[0]),
+                                vJ[1] + inter.ub * (vJp1[1] - vJ[1]),
+                                vJ[2] + inter.ub * (vJp1[2] - vJ[2])
+                            ];
+                            
+                            let new_idx1 = engVerts.length; 
+                            engVerts.push(pInter1);
+                            rawVerts.push([pInter1[0] / -0.1, pInter1[1] / -0.1, pInter1[2] / 0.1]);
+
+                            let new_idx2 = engVerts.length; 
+                            engVerts.push(pInter2);
+                            rawVerts.push([pInter2[0] / -0.1, pInter2[1] / -0.1, pInter2[2] / 0.1]);
+                            
+                            let loop1 = [];
+                            for (let k = (i+1)%n; k !== (j+1)%n; k = (k+1)%n) loop1.push(indices[k]);
+                            loop1.push(new_idx2);
+                            
+                            let loop2 = [];
+                            for (let k = (j+1)%n; k !== (i+1)%n; k = (k+1)%n) loop2.push(indices[k]);
+                            loop2.push(new_idx1);
+                            
+                            return splitLoop(loop1, depth + 1).concat(splitLoop(loop2, depth + 1));
+                        }
+                    }
+                }
+                return [indices];
+            }
+
+            function triangulatePolygon(indices) {
+                let n = indices.length;
+                if (n < 3) return [];
+                if (n === 3) return [[indices[0], indices[1], indices[2]]];
+                
+                let poly_3d = indices.map(i => engVerts[i]);
+                let mx = 0, my = 0, mz = 0;
+                for (let i = 0; i < n; i++) {
+                    let p1 = poly_3d[i], p2 = poly_3d[(i+1)%n];
+                    mx += (p1[1] - p2[1]) * (p1[2] + p2[2]);
+                    my += (p1[2] - p2[2]) * (p1[0] + p2[0]);
+                    mz += (p1[0] - p2[0]) * (p1[1] + p2[1]);
+                }
+                
+                let area_yz_newell = Math.abs(mx) * 0.5;
+                let area_xz_newell = Math.abs(my) * 0.5;
+                let area_xy_newell = Math.abs(mz) * 0.5;
+                
+                let minX = poly_3d[0][0], maxX = poly_3d[0][0];
+                let minY = poly_3d[0][1], maxY = poly_3d[0][1];
+                let minZ = poly_3d[0][2], maxZ = poly_3d[0][2];
+                for (let i = 1; i < n; i++) {
+                    if (poly_3d[i][0] < minX) minX = poly_3d[i][0];
+                    if (poly_3d[i][0] > maxX) maxX = poly_3d[i][0];
+                    if (poly_3d[i][1] < minY) minY = poly_3d[i][1];
+                    if (poly_3d[i][1] > maxY) maxY = poly_3d[i][1];
+                    if (poly_3d[i][2] < minZ) minZ = poly_3d[i][2];
+                    if (poly_3d[i][2] > maxZ) maxZ = poly_3d[i][2];
+                }
+                
+                let rx = maxX - minX, ry = maxY - minY, rz = maxZ - minZ;
+                let score_yz = area_yz_newell * (ry * rz);
+                let score_xz = area_xz_newell * (rx * rz);
+                let score_xy = area_xy_newell * (rx * ry);
+                
+                let poly_2d = [];
+                if (score_yz >= score_xz && score_yz >= score_xy) poly_3d.forEach(p => poly_2d.push([p[1], p[2]]));
+                else if (score_xz >= score_yz && score_xz >= score_xy) poly_3d.forEach(p => poly_2d.push([p[0], p[2]]));
+                else poly_3d.forEach(p => poly_2d.push([p[0], p[1]]));
+                
+                function area2D(p1, p2, p3) { return (p2[0]-p1[0])*(p3[1]-p1[1]) - (p3[0]-p1[0])*(p2[1]-p1[1]); }
+                
+                let s = 0;
+                for (let i = 0; i < n; i++) s += (poly_2d[(i+1)%n][0] - poly_2d[i][0]) * (poly_2d[(i+1)%n][1] + poly_2d[i][1]);
+                let isCCW = s < 0;
+                
+                function isPointInTriangle(p, a, b, c) {
+                    let d1 = (p[0]-a[0])**2 + (p[1]-a[1])**2, d2 = (p[0]-b[0])**2 + (p[1]-b[1])**2, d3 = (p[0]-c[0])**2 + (p[1]-c[1])**2;
+                    if (d1 < 1e-5 || d2 < 1e-5 || d3 < 1e-5) return false;
+                    let aABC = Math.abs(area2D(a, b, c)), aPAB = Math.abs(area2D(p, a, b)), aPBC = Math.abs(area2D(p, b, c)), aPCA = Math.abs(area2D(p, c, a));
+                    if (aPAB < 1e-5 || aPBC < 1e-5 || aPCA < 1e-5) return false;
+                    return Math.abs(aABC - (aPAB + aPBC + aPCA)) < 1e-4;
+                }
+                
+                let workIndices = Array.from({length: n}, (_, i) => i);
+                let triangles = [];
+                let attempts = 0;
+                
+                while (workIndices.length >= 3 && attempts < n * n) {
+                    attempts++;
+                    let bestEar = -1, maxAbsX = -1;
+                    
+                    for (let i = 0; i < workIndices.length; i++) {
+                        let prev_i = workIndices[(i-1+workIndices.length)%workIndices.length];
+                        let curr_i = workIndices[i];
+                        let next_i = workIndices[(i+1)%workIndices.length];
+                        
+                        let val = area2D(poly_2d[prev_i], poly_2d[curr_i], poly_2d[next_i]);
+                        if ((isCCW ? val > 1e-5 : val < -1e-5)) {
+                            let isEar = true;
+                            for (let k = 0; k < workIndices.length; k++) {
+                                let idx = workIndices[k];
+                                if (idx === prev_i || idx === curr_i || idx === next_i) continue;
+                                if (isPointInTriangle(poly_2d[idx], poly_2d[prev_i], poly_2d[curr_i], poly_2d[next_i])) {
+                                    isEar = false; break;
+                                }
+                            }
+                            if (isEar) {
+                                let absX = Math.abs(poly_3d[curr_i][0]);
+                                if (absX > maxAbsX) { maxAbsX = absX; bestEar = i; }
+                            }
+                        }
+                    }
+                    if (bestEar === -1) break;
+                    triangles.push([indices[workIndices[(bestEar-1+workIndices.length)%workIndices.length]], indices[workIndices[bestEar]], indices[workIndices[(bestEar+1)%workIndices.length]]]);
+                    workIndices.splice(bestEar, 1);
+                }
+                if (workIndices.length >= 3) {
+                    for (let j = 1; j < workIndices.length - 1; j++) triangles.push([indices[workIndices[0]], indices[workIndices[j]], indices[workIndices[j+1]]]);
+                }
+                return triangles;
+            }
+
+            function isPointOnLine(p, a, b) {
+                let d1 = Math.hypot(p[0]-a[0], p[1]-a[1], p[2]-a[2]);
+                let d2 = Math.hypot(p[0]-b[0], p[1]-b[1], p[2]-b[2]);
+                let D = Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]);
+                return Math.abs((d1 + d2) - D) < 1e-4;
+            }
+
+            function isEdgeOriginal(vA, vB, origIndices) {
+                for (let i = 0; i < origIndices.length; i++) {
+                    let pA = engVerts[origIndices[i]];
+                    let pB = engVerts[origIndices[(i + 1) % origIndices.length]];
+                    let pV_A = engVerts[vA];
+                    let pV_B = engVerts[vB];
+                    if (isPointOnLine(pV_A, pA, pB) && isPointOnLine(pV_B, pA, pB)) return true;
+                }
+                return false;
+            }
+
+            let exportVerts = [];
+            let exportVertMap = new Map();
+            let exportTriangles = [];
+
+            function getExportVert(idx) {
+                let rv = rawVerts[idx];
+                let key = `${rv[0].toFixed(4)},${rv[1].toFixed(4)},${rv[2].toFixed(4)}`;
+                if (exportVertMap.has(key)) return exportVertMap.get(key);
+                let eIdx = exportVerts.length;
+                exportVerts.push([rv[0], rv[1], rv[2]]);
+                exportVertMap.set(key, eIdx);
+                return eIdx;
+            }
+
+            for (let p of polys) {
+                let subLoops = splitAtRepeatedVertices(p.origIndices, 1e-4);
+                let finalTriangles = [];
+                
+                for (let s of subLoops) {
+                    let crossed = splitLoop(s);
+                    for (let c of crossed) {
+                        let tris = triangulatePolygon(c);
+                        for (let t of tris) finalTriangles.push(t);
+                    }
+                }
+
+                let nx = 0, ny = 0, nz = 0;
+                let n = p.origIndices.length;
+                let centerX = 0;
+                
+                for (let i = 0; i < n; i++) {
+                    let p1 = engVerts[p.origIndices[i]], p2 = engVerts[p.origIndices[(i+1)%n]];
+                    nx += (p1[1] - p2[1]) * (p1[2] + p2[2]);
+                    ny += (p1[2] - p2[2]) * (p1[0] + p2[0]);
+                    nz += (p1[0] - p2[0]) * (p1[1] + p2[1]);
+                    centerX -= p1[0];
+                }
+                
+                centerX /= n;
+
+                let len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+                if (len > 1e-6) { nx/=len; ny/=len; nz/=len; } else { ny = 1; }
+                if (p.fsVal < 0) { nx = -nx; ny = -ny; nz = -nz; }
+
+                if (applyAutoFix) {
+                    if (Math.abs(ny) > Math.abs(nx) && Math.abs(ny) > Math.abs(nz)) {
+                        if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+                    } else if (Math.abs(nx) > Math.abs(ny) && Math.abs(nx) > Math.abs(nz)) {
+                        if ((centerX < -10 && nx < 0) || (centerX > 10 && nx > 0)) {
+                            nx = -nx; ny = -ny; nz = -nz;
+                        }
+                    }
+                }
+
+                let type = p.noOutline ? 0 : p.outType;
+
+                let mappedTris = [];
+                for (let t of finalTriangles) {
+                    let mask = 0;
+                    if (isEdgeOriginal(t[0], t[1], p.origIndices)) mask |= 1;
+                    if (isEdgeOriginal(t[1], t[2], p.origIndices)) mask |= 2;
+                    if (isEdgeOriginal(t[2], t[0], p.origIndices)) mask |= 4;
+
+                    mappedTris.push({
+                        verts: [getExportVert(t[0]), getExportVert(t[1]), getExportVert(t[2])],
+                        mask: mask
+                    });
+                }
+
+                exportTriangles.push({
+                    color: p.color,
+                    norm: [nx, ny, nz], 
+                    type: type,
+                    tris: mappedTris
+                });
+            }
+
+            for (let v of exportVerts) {
+                outLines.push(`v(${v[0].toFixed(4)}, ${v[1].toFixed(4)}, ${v[2].toFixed(4)})`);
+            }
+            
+            outLines.push("");
+
+            for (let g of exportTriangles) {
+                outLines.push("<p>");
+                outLines.push(`c(${g.color[0]}, ${g.color[1]}, ${g.color[2]}, ${g.color[3]})`);
+                outLines.push(`n(${g.norm[0].toFixed(4)}, ${g.norm[1].toFixed(4)}, ${g.norm[2].toFixed(4)})`);
+                for (let t of g.tris) {
+                    outLines.push(`t(${t.verts[0]}, ${t.verts[1]}, ${t.verts[2]}, ${g.type}, ${t.mask})`);
+                }
+                outLines.push("</p>");
+            }
+
+            return outLines.join('\n');
+        }
+
+        // ========================================================
+        // 2. Three.js Viewer Setup & Interactive Editor
+        // ========================================================
+        let scene, camera, renderer, controls, currentModel;
+        let currentXRadData = null;
+        let currentFileName = "model";
+
+        const nfmVertexShader = `
+            attribute vec4 aVertexColor;
+            uniform float uSelected;
+            uniform float uHighlightBackfaces;
+            varying vec4 vColor;
+
+            void main() {
+                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                vec4 mvPosition = viewMatrix * worldPosition;
+                gl_Position = projectionMatrix * mvPosition;
+
+                vec3 rawNormal = normal;
+                float normalLength = length(rawNormal);
+                if (normalLength > 0.1) {
+                    rawNormal = rawNormal / normalLength;
+                }
+
+                vec3 worldNormal = normalize((modelMatrix * vec4(rawNormal, 0.0)).xyz);
+                
+                float f1 = worldNormal.y + 0.08;
+                f1 = clamp(f1, 0.45, 0.9);
+
+                vec3 finalColor = aVertexColor.rgb * f1;
+                
+                if (uHighlightBackfaces > 0.5) {
+                    vec3 viewNormal = normalize(normalMatrix * rawNormal);
+                    if (dot(viewNormal, normalize(mvPosition.xyz)) > 0.0) {
+                        finalColor = mix(finalColor, vec3(1.0, 0.0, 0.0), 0.75);
+                    }
+                }
+
+                finalColor += vec3(uSelected * 0.3);
+                vColor = vec4(finalColor, aVertexColor.a);
+            }
+        `;
+
+        const nfmFragmentShader = `
+            varying vec4 vColor;
+            void main() {
+                gl_FragColor = vColor;
+            }
+        `;
+
+        // Editor state
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let mouseDownPos = new THREE.Vector2();
+        let selectedPolyIndex = -1;
+        let normalArrow = null;
+        let copiedNormal = null;
+
+        function initViewer() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 10000);
+            camera.position.set(60, 40, 60);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.1;
+
+            const gridHelper = new THREE.GridHelper(200, 20, 0x555555, 0x333333);
+            scene.add(gridHelper);
+
+            const axesHelper = new THREE.AxesHelper(30);
+            scene.add(axesHelper);
+
+            normalArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 15, 0xff00ff);
+            normalArrow.visible = false;
+            scene.add(normalArrow);
+
+            window.addEventListener('resize', onWindowResize);
+
+            const canvas = renderer.domElement;
+            
+            canvas.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0) return; 
+                mouseDownPos.set(e.clientX, e.clientY);
+            });
+
+            canvas.addEventListener('pointerup', (e) => {
+                if (e.button !== 0) return; 
+                if (mouseDownPos.distanceTo(new THREE.Vector2(e.clientX, e.clientY)) > 5) return;
+
+                const rect = canvas.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+
+                if (!currentModel) return;
+
+                const polyMeshes = currentModel.children.filter(c => c.userData.isPoly);
+                const intersects = raycaster.intersectObjects(polyMeshes, false);
+
+                if (intersects.length > 0) {
+                    selectMesh(intersects[0].object, intersects[0].point);
+                } else {
+                    deselectMesh();
+                }
+            });
+
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function selectMesh(mesh, intersectionPoint) {
+            deselectMesh(); 
+            selectedPolyIndex = mesh.userData.polyIndex;
+            
+            mesh.material.uniforms.uSelected.value = 1.0;
+
+            const en = mesh.userData.engineNormal;
+            document.getElementById('normX').value = en.x;
+            document.getElementById('normY').value = en.y;
+            document.getElementById('normZ').value = en.z;
+            document.getElementById('editor-ui').style.display = 'block';
+
+            const webglNormal = new THREE.Vector3(en.x, en.y, en.z).normalize();
+            let origin = intersectionPoint;
+            
+            if (!origin) {
+                mesh.geometry.computeBoundingBox();
+                origin = new THREE.Vector3();
+                mesh.geometry.boundingBox.getCenter(origin);
+            }
+            
+            const len = Math.max(1, en.length());
+            const displayLength = Math.max(8, len * 4);
+
+            normalArrow.position.copy(origin);
+            normalArrow.setDirection(webglNormal);
+            normalArrow.setLength(displayLength, displayLength * 0.25, displayLength * 0.25);
+            normalArrow.visible = true;
+        }
+
+        function deselectMesh() {
+            if (selectedPolyIndex !== -1 && currentModel && currentModel.children[selectedPolyIndex]) {
+                currentModel.children[selectedPolyIndex].material.uniforms.uSelected.value = 0.0;
+            }
+            selectedPolyIndex = -1;
+            document.getElementById('editor-ui').style.display = 'none';
+            if (normalArrow) normalArrow.visible = false;
+        }
+
+        function updateSelectedNormal(nx, ny, nz) {
+            if (selectedPolyIndex === -1 || !currentModel) return;
+            const lines = currentXRadData.split('\n');
+            const mesh = currentModel.children[selectedPolyIndex];
+            const ud = mesh.userData;
+            
+            const normalStr = `n(${nx.toFixed(4)}, ${ny.toFixed(4)}, ${nz.toFixed(4)})`;
+
+            if (ud.normalLineIndex !== -1) {
+                lines[ud.normalLineIndex] = normalStr;
+            } else {
+                lines.splice(ud.pStartIndex + 1, 0, normalStr);
+            }
+
+            currentXRadData = lines.join('\n');
+            loadModelIntoScene(currentXRadData, selectedPolyIndex);
+        }
+
+        // --- SMART POLYGON TRANSFORMATION ENGINE ---
+        window.transformSelectedPolygon = function(dx, dy, dz, rx, ry, rz) {
+            if (selectedPolyIndex === -1 || !currentModel) return;
+            const mesh = currentModel.children[selectedPolyIndex];
+            const pStart = mesh.userData.pStartIndex;
+
+            let lines = currentXRadData.split('\n');
+
+            let vLineIndices = [];
+            let firstPLine = -1;
+            for (let i=0; i<lines.length; i++) {
+                let l = lines[i].trim();
+                if (l.startsWith("v(")) vLineIndices.push(i);
+                if (l === "<p>" || l === "[p]") {
+                    if (firstPLine === -1) firstPLine = i;
+                }
+            }
+
+            let pEnd = -1;
+            for (let i=pStart+1; i<lines.length; i++) {
+                let l = lines[i].trim();
+                if (l === "</p>" || l === "[/p]") { pEnd = i; break; }
+            }
+
+            let polyVerts = new Set();
+            let tLinesInPoly = [];
+            for (let i=pStart+1; i<pEnd; i++) {
+                let l = lines[i].trim();
+                if (l.startsWith("t(")) {
+                    tLinesInPoly.push(i);
+                    let parts = l.substring(2, l.indexOf(")")).split(",");
+                    polyVerts.add(parseInt(parts[0]));
+                    polyVerts.add(parseInt(parts[1]));
+                    polyVerts.add(parseInt(parts[2]));
+                }
+            }
+
+            let sharedVerts = new Set();
+            for (let i=firstPLine; i<lines.length; i++) {
+                if (i >= pStart && i <= pEnd) continue;
+                let l = lines[i].trim();
+                if (l.startsWith("t(")) {
+                    let parts = l.substring(2, l.indexOf(")")).split(",");
+                    let v0 = parseInt(parts[0]), v1 = parseInt(parts[1]), v2 = parseInt(parts[2]);
+                    if (polyVerts.has(v0)) sharedVerts.add(v0);
+                    if (polyVerts.has(v1)) sharedVerts.add(v1);
+                    if (polyVerts.has(v2)) sharedVerts.add(v2);
+                }
+            }
+
+            let exclusiveVerts = [];
+            let clonedVerts = [];
+            let vertRemap = new Map();
+            let totalVerts = vLineIndices.length;
+
+            polyVerts.forEach(vIdx => {
+                let vLine = lines[vLineIndices[vIdx]];
+                let parts = vLine.substring(2, vLine.indexOf(")")).split(",");
+                let vec = new THREE.Vector3(parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2]));
+
+                if (sharedVerts.has(vIdx)) {
+                    let newIdx = totalVerts + clonedVerts.length;
+                    vertRemap.set(vIdx, newIdx);
+                    clonedVerts.push({ vec: vec, newIdx: newIdx });
+                } else {
+                    exclusiveVerts.push({ vec: vec, lineIdx: vLineIndices[vIdx] });
+                }
+            });
+
+            if (vertRemap.size > 0) {
+                for (let lineIdx of tLinesInPoly) {
+                    let l = lines[lineIdx].trim();
+                    let parts = l.substring(2, l.indexOf(")")).split(",");
+                    let tail = parts.slice(3).join(",");
+                    let v0 = parseInt(parts[0]), v1 = parseInt(parts[1]), v2 = parseInt(parts[2]);
+
+                    if (vertRemap.has(v0)) v0 = vertRemap.get(v0);
+                    if (vertRemap.has(v1)) v1 = vertRemap.get(v1);
+                    if (vertRemap.has(v2)) v2 = vertRemap.get(v2);
+
+                    lines[lineIdx] = `t(${v0}, ${v1}, ${v2}, ${tail})`;
+                }
+            }
+
+            let center = new THREE.Vector3();
+            let allVecs = [...exclusiveVerts.map(v=>v.vec), ...clonedVerts.map(v=>v.vec)];
+            allVecs.forEach(v => center.add(v));
+            center.divideScalar(allVecs.length);
+
+            let euler = new THREE.Euler(THREE.MathUtils.degToRad(rx), THREE.MathUtils.degToRad(ry), THREE.MathUtils.degToRad(rz), 'XYZ');
+            let translation = new THREE.Vector3(dx, dy, dz);
+
+            let cWebgl = new THREE.Vector3(-center.x * 0.1, -center.y * 0.1, center.z * 0.1);
+
+            allVecs.forEach(v => {
+                let wVec = new THREE.Vector3(-v.x * 0.1, -v.y * 0.1, v.z * 0.1);
+                wVec.sub(cWebgl);
+                wVec.applyEuler(euler);
+                wVec.add(cWebgl);
+                wVec.add(translation);
+
+                v.x = -wVec.x * 10.0;
+                v.y = -wVec.y * 10.0;
+                v.z = wVec.z * 10.0;
+            });
+
+            exclusiveVerts.forEach(ev => {
+                lines[ev.lineIdx] = `v(${ev.vec.x.toFixed(4)}, ${ev.vec.y.toFixed(4)}, ${ev.vec.z.toFixed(4)})`;
+            });
+
+            if (rx !== 0 || ry !== 0 || rz !== 0) {
+                let ud = mesh.userData;
+                let n = ud.engineNormal.clone();
+                let wn = new THREE.Vector3(-n.x, n.y, n.z);
+                wn.applyEuler(euler);
+                wn.normalize();
+                let newNx = -wn.x, newNy = wn.y, newNz = wn.z;
+
+                let normalStr = `n(${newNx.toFixed(4)}, ${newNy.toFixed(4)}, ${newNz.toFixed(4)})`;
+                if (ud.normalLineIndex !== -1) {
+                    lines[ud.normalLineIndex] = normalStr;
+                } else {
+                    lines.splice(pStart + 1, 0, normalStr);
+                }
+            }
+
+            let insertPos = -1;
+            for (let i=0; i<lines.length; i++) {
+                if (lines[i].trim().startsWith("v(")) insertPos = i;
+            }
+            insertPos += 1;
+
+            let newVLines = clonedVerts.map(cv => `v(${cv.vec.x.toFixed(4)}, ${cv.vec.y.toFixed(4)}, ${cv.vec.z.toFixed(4)})`);
+            if (newVLines.length > 0) {
+                lines.splice(insertPos, 0, ...newVLines);
+            }
+
+            currentXRadData = lines.join('\n');
+            loadModelIntoScene(currentXRadData, selectedPolyIndex);
+        }
+
+        window.nudgePoly = function(dirX, dirY, dirZ) {
+            let step = parseFloat(document.getElementById('tStep').value) || 0.1;
+            transformSelectedPolygon(dirX * step, dirY * step, dirZ * step, 0, 0, 0);
+        };
+        window.rotatePoly = function(dirX, dirY, dirZ) {
+            let step = parseFloat(document.getElementById('rStep').value) || 5.0;
+            transformSelectedPolygon(0, 0, 0, dirX * step, dirY * step, dirZ * step);
+        };
+
+        // --- RE-TRIANGULATION ENGINE ---
+        function getLoopsFromEdges(edges) {
+            let loops = [];
+            let e = [...edges];
+            while(e.length > 0) {
+                let loop = [];
+                let curr = e.shift();
+                loop.push(curr[0], curr[1]);
+                let changed = true;
+                while(changed && e.length > 0) {
+                    changed = false;
+                    let head = loop[0];
+                    let tail = loop[loop.length-1];
+                    for(let i=0; i<e.length; i++) {
+                        if(e[i][0] === tail) { loop.push(e[i][1]); e.splice(i,1); changed = true; break; }
+                        else if(e[i][1] === tail) { loop.push(e[i][0]); e.splice(i,1); changed = true; break; }
+                        else if(e[i][0] === head) { loop.unshift(e[i][1]); e.splice(i,1); changed = true; break; }
+                        else if(e[i][1] === head) { loop.unshift(e[i][0]); e.splice(i,1); changed = true; break; }
+                    }
+                }
+                if(loop.length > 1 && loop[0] === loop[loop.length-1]) {
+                    loop.pop(); 
+                }
+                loops.push(loop);
+            }
+            return loops;
+        }
+
+        function bridgeHoles(loops, verts) {
+            if (loops.length <= 1) return loops;
+
+            let plane = 'xy';
+            let area_yz = 0, area_xz = 0, area_xy = 0;
+            let outerTest = loops[0];
+            for (let i = 0; i < outerTest.length; i++) {
+                let p1 = verts[outerTest[i]], p2 = verts[outerTest[(i + 1) % outerTest.length]];
+                area_yz += (p1.y - p2.y) * (p1.z + p2.z);
+                area_xz += (p1.x - p2.x) * (p1.z + p2.z);
+                area_xy += (p1.x - p2.x) * (p1.y + p2.y);
+            }
+            if (Math.abs(area_yz) >= Math.abs(area_xz) && Math.abs(area_yz) >= Math.abs(area_xy)) plane = 'yz';
+            else if (Math.abs(area_xz) >= Math.abs(area_yz) && Math.abs(area_xz) >= Math.abs(area_xy)) plane = 'xz';
+            
+            function get2D(p) {
+                if (plane === 'yz') return {x: p.y, y: p.z};
+                if (plane === 'xz') return {x: p.x, y: p.z};
+                return {x: p.x, y: p.y};
+            }
+
+            let loopAreas = loops.map(loop => {
+                let area = 0;
+                for (let i=0; i<loop.length; i++) {
+                    let p1 = get2D(verts[loop[i]]), p2 = get2D(verts[loop[(i+1)%loop.length]]);
+                    area += (p2.x - p1.x) * (p2.y + p1.y);
+                }
+                return { loop: loop, area: area }; 
+            });
+            
+            loopAreas.sort((a,b) => Math.abs(b.area) - Math.abs(a.area));
+            
+            let outer = loopAreas[0].loop.slice();
+            let outerSign = Math.sign(loopAreas[0].area);
+            
+            let holes = loopAreas.slice(1).map(la => {
+                let h = la.loop.slice();
+                if (Math.sign(la.area) === outerSign && outerSign !== 0) {
+                    h.reverse();
+                }
+                return h;
+            });
+
+            function orientation(a, b, c) {
+                let val = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
+                if (Math.abs(val) < 1e-6) return 0;
+                return (val > 0) ? 1 : 2;
+            }
+
+            function doIntersect(p1, q1, p2, q2) {
+                let o1 = orientation(p1, q1, p2);
+                let o2 = orientation(p1, q1, q2);
+                let o3 = orientation(p2, q2, p1);
+                let o4 = orientation(p2, q2, q1);
+                if (o1 !== o2 && o3 !== o4) return true;
+                return false;
+            }
+
+            for (let hole of holes) {
+                let bestDist = Infinity;
+                let bestO = -1;
+                let bestH = -1;
+
+                for (let i = 0; i < outer.length; i++) {
+                    for (let j = 0; j < hole.length; j++) {
+                        let pOuter = get2D(verts[outer[i]]);
+                        let pHole = get2D(verts[hole[j]]);
+                        let dist = Math.hypot(pOuter.x - pHole.x, pOuter.y - pHole.y);
+                        
+                        if (dist < bestDist) {
+                            let intersects = false;
+                            let allLoops = [outer, ...holes];
+                            for (let l of allLoops) {
+                                for (let k = 0; k < l.length; k++) {
+                                    let pA = get2D(verts[l[k]]);
+                                    let pB = get2D(verts[l[(k+1)%l.length]]);
+                                    
+                                    if ((Math.abs(pA.x - pOuter.x) < 1e-5 && Math.abs(pA.y - pOuter.y) < 1e-5) ||
+                                        (Math.abs(pA.x - pHole.x) < 1e-5 && Math.abs(pA.y - pHole.y) < 1e-5) ||
+                                        (Math.abs(pB.x - pOuter.x) < 1e-5 && Math.abs(pB.y - pOuter.y) < 1e-5) ||
+                                        (Math.abs(pB.x - pHole.x) < 1e-5 && Math.abs(pB.y - pHole.y) < 1e-5)) {
+                                        continue;
+                                    }
+
+                                    if (doIntersect(pOuter, pHole, pA, pB)) {
+                                        intersects = true;
+                                        break;
+                                    }
+                                }
+                                if (intersects) break;
+                            }
+                            
+                            if (!intersects) {
+                                bestDist = dist;
+                                bestO = i;
+                                bestH = j;
+                            }
+                        }
+                    }
+                }
+
+                if (bestO !== -1 && bestH !== -1) {
+                    let newOuter = [];
+                    for (let i = 0; i <= bestO; i++) newOuter.push(outer[i]);
+                    for (let i = 0; i < hole.length; i++) newOuter.push(hole[(bestH + i) % hole.length]);
+                    newOuter.push(hole[bestH]);
+                    newOuter.push(outer[bestO]);
+                    for (let i = bestO + 1; i < outer.length; i++) newOuter.push(outer[i]);
+                    outer = newOuter;
+                }
+            }
+
+            return [outer];
+        }
+
+        // Support standard ear clipping or Shortest Diagonal ear clipping
+        function performEarClipping(indices, verts, mode="nfm") {
+            let n = indices.length;
+            if (n < 3) return [];
+            if (n === 3) return [[indices[0], indices[1], indices[2]]];
+            
+            let poly_3d = indices.map(i => verts[i]);
+            let mx = 0, my = 0, mz = 0;
+            for (let i = 0; i < n; i++) {
+                let p1 = poly_3d[i], p2 = poly_3d[(i+1)%n];
+                mx += (p1.y - p2.y) * (p1.z + p2.z);
+                my += (p1.z - p2.z) * (p1.x + p2.x);
+                mz += (p1.x - p2.x) * (p1.y + p2.y);
+            }
+            
+            let area_yz_newell = Math.abs(mx) * 0.5;
+            let area_xz_newell = Math.abs(my) * 0.5;
+            let area_xy_newell = Math.abs(mz) * 0.5;
+            
+            let minX = poly_3d[0].x, maxX = poly_3d[0].x;
+            let minY = poly_3d[0].y, maxY = poly_3d[0].y;
+            let minZ = poly_3d[0].z, maxZ = poly_3d[0].z;
+            for (let i = 1; i < n; i++) {
+                if (poly_3d[i].x < minX) minX = poly_3d[i].x;
+                if (poly_3d[i].x > maxX) maxX = poly_3d[i].x;
+                if (poly_3d[i].y < minY) minY = poly_3d[i].y;
+                if (poly_3d[i].y > maxY) maxY = poly_3d[i].y;
+                if (poly_3d[i].z < minZ) minZ = poly_3d[i].z;
+                if (poly_3d[i].z > maxZ) maxZ = poly_3d[i].z;
+            }
+            
+            let rx = maxX - minX, ry = maxY - minY, rz = maxZ - minZ;
+            let score_yz = area_yz_newell * (ry * rz);
+            let score_xz = area_xz_newell * (rx * rz);
+            let score_xy = area_xy_newell * (rx * ry);
+            
+            let poly_2d = [];
+            if (score_yz >= score_xz && score_yz >= score_xy) poly_3d.forEach(p => poly_2d.push({u: p.y, v: p.z}));
+            else if (score_xz >= score_yz && score_xz >= score_xy) poly_3d.forEach(p => poly_2d.push({u: p.x, v: p.z}));
+            else poly_3d.forEach(p => poly_2d.push({u: p.x, v: p.y}));
+            
+            function area2D(p1, p2, p3) { return (p2.u - p1.u)*(p3.v - p1.v) - (p3.u - p1.u)*(p2.v - p1.v); }
+            
+            let s = 0;
+            for (let i = 0; i < n; i++) s += (poly_2d[(i+1)%n].u - poly_2d[i].u) * (poly_2d[(i+1)%n].v + poly_2d[i].v);
+            let isCCW = s < 0;
+            
+            function isPointInTriangle(p, a, b, c) {
+                let d1 = (p.u-a.u)**2 + (p.v-a.v)**2, d2 = (p.u-b.u)**2 + (p.v-b.v)**2, d3 = (p.u-c.u)**2 + (p.v-c.v)**2;
+                if (d1 < 1e-5 || d2 < 1e-5 || d3 < 1e-5) return false;
+                let aABC = Math.abs(area2D(a, b, c)), aPAB = Math.abs(area2D(p, a, b)), aPBC = Math.abs(area2D(p, b, c)), aPCA = Math.abs(area2D(p, c, a));
+                if (aPAB < 1e-5 || aPBC < 1e-5 || aPCA < 1e-5) return false;
+                return Math.abs(aABC - (aPAB + aPBC + aPCA)) < 1e-4;
+            }
+            
+            let workIndices = Array.from({length: n}, (_, i) => i);
+            let triangles = [];
+            let attempts = 0;
+            
+            while (workIndices.length >= 3 && attempts < n * n) {
+                attempts++;
+                let bestEar = -1;
+                let bestScore = mode === "shortest" ? Infinity : -1;
+                
+                for (let i = 0; i < workIndices.length; i++) {
+                    let prev_i = workIndices[(i-1+workIndices.length)%workIndices.length];
+                    let curr_i = workIndices[i];
+                    let next_i = workIndices[(i+1)%workIndices.length];
+                    
+                    let val = area2D(poly_2d[prev_i], poly_2d[curr_i], poly_2d[next_i]);
+                    if ((isCCW ? val > 1e-5 : val < -1e-5)) {
+                        let isEar = true;
+                        for (let k = 0; k < workIndices.length; k++) {
+                            let idx = workIndices[k];
+                            if (idx === prev_i || idx === curr_i || idx === next_i) continue;
+                            if (isPointInTriangle(poly_2d[idx], poly_2d[prev_i], poly_2d[curr_i], poly_2d[next_i])) {
+                                isEar = false; break;
+                            }
+                        }
+                        if (isEar) {
+                            if (mode === "nfm") {
+                                let absU = Math.abs(poly_2d[curr_i].u);
+                                if (absU > bestScore) { bestScore = absU; bestEar = i; }
+                            } else if (mode === "shortest") {
+                                // Real 3D distance of the diagonal
+                                let dX = poly_3d[prev_i].x - poly_3d[next_i].x;
+                                let dY = poly_3d[prev_i].y - poly_3d[next_i].y;
+                                let dZ = poly_3d[prev_i].z - poly_3d[next_i].z;
+                                let distSq = dX*dX + dY*dY + dZ*dZ;
+                                if (distSq < bestScore) { bestScore = distSq; bestEar = i; }
+                            }
+                        }
+                    }
+                }
+                if (bestEar === -1) break;
+                triangles.push([
+                    indices[workIndices[(bestEar-1+workIndices.length)%workIndices.length]], 
+                    indices[workIndices[bestEar]], 
+                    indices[workIndices[(bestEar+1)%workIndices.length]]
+                ]);
+                workIndices.splice(bestEar, 1);
+            }
+            if (workIndices.length >= 3) {
+                for (let j = 1; j < workIndices.length - 1; j++) {
+                    triangles.push([indices[workIndices[0]], indices[workIndices[j]], indices[workIndices[j+1]]]);
+                }
+            }
+            return triangles;
+        }
+
+        window.retriangulatePoly = function() {
+            if (selectedPolyIndex === -1 || !currentModel) return;
+            
+            let algo = document.getElementById('selTriAlgo').value;
+            let mesh = currentModel.children[selectedPolyIndex];
+            let pStart = mesh.userData.pStartIndex;
+            let lines = currentXRadData.split('\n');
+
+            let pEnd = -1;
+            for (let i=pStart+1; i<lines.length; i++) {
+                let l = lines[i].trim();
+                if (l === "</p>" || l === "[/p]") { pEnd = i; break; }
+            }
+
+            let tLinesIndices = [];
+            let edges = [];
+            let polyType = 1;
+
+            for (let i=pStart+1; i<pEnd; i++) {
+                let l = lines[i].trim();
+                if (l.startsWith("t(")) {
+                    tLinesIndices.push(i);
+                    let parts = l.substring(2, l.indexOf(")")).split(",");
+                    let v0=parseInt(parts[0]), v1=parseInt(parts[1]), v2=parseInt(parts[2]);
+                    polyType = parseInt(parts[3] || "1");
+                    let mask = parseInt(parts[4] || "0");
+                    
+                    if (mask & 1) edges.push([v0, v1]);
+                    if (mask & 2) edges.push([v1, v2]);
+                    if (mask & 4) edges.push([v2, v0]);
+                }
+            }
+
+            if (edges.length < 3) {
+                alert("Not enough boundary edges found to re-triangulate! Ensure the polygon has outline masks.");
+                return;
+            }
+
+            let loops = getLoopsFromEdges(edges);
+            
+            let newTriangles = [];
+            let newVertLines = [];
+            
+            let allVerts = [];
+            let vLineCount = 0;
+            for (let i=0; i<lines.length; i++) {
+                let l = lines[i].trim();
+                if (l.startsWith("v(")) {
+                    vLineCount++;
+                    let parts = l.substring(2, l.indexOf(")")).split(",");
+                    allVerts.push(new THREE.Vector3(parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2])));
+                }
+            }
+
+            let currentVertCount = allVerts.length;
+
+            if (algo === "holes") {
+                loops = bridgeHoles(loops, allVerts);
+                algo = "ear"; // fallback to standard ear clipping on the merged loop
+            }
+
+            for (let loop of loops) {
+                if (loop.length < 3) continue;
+                
+                if (algo === "fan") {
+                    let v0 = loop[0];
+                    for (let i=1; i<loop.length-1; i++) {
+                        newTriangles.push([v0, loop[i], loop[i+1]]);
+                    }
+                } else if (algo === "strip") {
+                    let left = 0;
+                    let right = loop.length - 1;
+                    let toggle = true;
+                    while (right - left > 1) {
+                        if (toggle) {
+                            newTriangles.push([loop[left], loop[left+1], loop[right]]);
+                            left++;
+                        } else {
+                            newTriangles.push([loop[right], loop[left], loop[right-1]]);
+                            right--;
+                        }
+                        toggle = !toggle;
+                    }
+                } else if (algo === "center") {
+                    let cx = 0, cy = 0, cz = 0;
+                    for (let vi of loop) {
+                        cx += allVerts[vi].x;
+                        cy += allVerts[vi].y;
+                        cz += allVerts[vi].z;
+                    }
+                    cx /= loop.length; cy /= loop.length; cz /= loop.length;
+                    
+                    let cIdx = currentVertCount++;
+                    newVertLines.push(`v(${cx.toFixed(4)}, ${cy.toFixed(4)}, ${cz.toFixed(4)})`);
+                    
+                    for(let i=0; i<loop.length; i++) {
+                        let nextI = (i+1)%loop.length;
+                        newTriangles.push([loop[i], loop[nextI], cIdx]);
+                    }
+                } else if (algo === "ear") {
+                    let tris = performEarClipping(loop, allVerts, "nfm");
+                    newTriangles.push(...tris);
+                } else if (algo === "ear_shortest") {
+                    let tris = performEarClipping(loop, allVerts, "shortest");
+                    newTriangles.push(...tris);
+                }
+            }
+
+            function isEdgeInAnyLoop(a, b, loops) {
+                for (let loop of loops) {
+                    for (let i=0; i<loop.length; i++) {
+                        let next = loop[(i+1)%loop.length];
+                        if ((loop[i]===a && next===b) || (loop[i]===b && next===a)) return true;
+                    }
+                }
+                return false;
+            }
+
+            let replacementTLines = [];
+            for (let tri of newTriangles) {
+                let mask = 0;
+                if(isEdgeInAnyLoop(tri[0], tri[1], loops)) mask |= 1;
+                if(isEdgeInAnyLoop(tri[1], tri[2], loops)) mask |= 2;
+                if(isEdgeInAnyLoop(tri[2], tri[0], loops)) mask |= 4;
+                
+                replacementTLines.push(`t(${tri[0]}, ${tri[1]}, ${tri[2]}, ${polyType}, ${mask})`);
+            }
+
+            lines.splice(tLinesIndices[0], tLinesIndices.length);
+            lines.splice(tLinesIndices[0], 0, ...replacementTLines);
+            
+            if (newVertLines.length > 0) {
+                let lastVIndex = -1;
+                for (let i=0; i<lines.length; i++) {
+                    if (lines[i].trim().startsWith("v(")) lastVIndex = i;
+                }
+                if (lastVIndex !== -1) {
+                    lines.splice(lastVIndex + 1, 0, ...newVertLines);
+                }
+            }
+
+            currentXRadData = lines.join('\n');
+            loadModelIntoScene(currentXRadData, selectedPolyIndex);
+        };
+
+        // Proper Cleanup to prevent Memory Leaks when replacing models
+        function disposeModel(model) {
+            if (!model) return;
+            model.traverse(function(child) {
+                if (child.geometry) {
+                    child.geometry.dispose();
+                }
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(mat => mat.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+            scene.remove(model);
+        }
+
+        function parseXRadToThree(xradText) {
+            const lines = xradText.split('\n');
+            const verts = [];
+            const group = new THREE.Group();
+
+            let currentColor = new THREE.Color(0.5, 0.5, 0.5);
+            let currentAlpha = 1.0;
+            
+            let pStartIndex = -1;
+            let normalLineIndex = -1;
+            let currentEngineNormal = new THREE.Vector3(0, 1, 0);
+            let hasGroupNormal = false;
+
+            let currentPositions = [];
+            let currentNormals = [];
+            let currentColors = [];
+            let edgePositions = [];
+
+            let totalPolys = 0;
+            const isHighlight = document.getElementById('chkHighlightBackfaces').checked ? 1.0 : 0.0;
+
+            function flushPoly() {
+                if (currentPositions.length > 0) {
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(currentPositions, 3));
+                    if (hasGroupNormal) {
+                        geometry.setAttribute('normal', new THREE.Float32BufferAttribute(currentNormals, 3));
+                    } else {
+                        geometry.computeVertexNormals();
+                    }
+                    geometry.setAttribute('aVertexColor', new THREE.Float32BufferAttribute(currentColors, 4));
+
+                    const material = new THREE.ShaderMaterial({
+                        vertexShader: nfmVertexShader,
+                        fragmentShader: nfmFragmentShader,
+                        uniforms: {
+                            uSelected: { value: 0.0 },
+                            uHighlightBackfaces: { value: isHighlight }
+                        },
+                        side: THREE.DoubleSide,
+                        transparent: currentAlpha < 1.0,
+                        polygonOffset: true,
+                        polygonOffsetFactor: 1,
+                        polygonOffsetUnits: 1
+                    });
+
+                    const mesh = new THREE.Mesh(geometry, material);
+                    
+                    mesh.userData = {
+                        isPoly: true,
+                        pStartIndex: pStartIndex,
+                        normalLineIndex: normalLineIndex,
+                        engineNormal: currentEngineNormal.clone(),
+                        polyIndex: group.children.length // Retains strict reference identity
+                    };
+                    
+                    group.add(mesh);
+
+                    if (edgePositions.length > 0) {
+                        const edgeGeom = new THREE.BufferGeometry();
+                        edgeGeom.setAttribute('position', new THREE.Float32BufferAttribute(edgePositions, 3));
+                        
+                        const edgeMat = new THREE.LineBasicMaterial({ 
+                            color: 0x000000, 
+                            linewidth: 2, 
+                            depthTest: true, 
+                            depthWrite: true 
+                        });
+                        const linesObj = new THREE.LineSegments(edgeGeom, edgeMat);
+                        group.add(linesObj);
+                    }
+                }
+                currentPositions = [];
+                currentNormals = [];
+                currentColors = [];
+                edgePositions = [];
+            }
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+                if (!line || line.startsWith("#")) continue;
+
+                if (line.startsWith("v(")) {
+                    const parts = line.substring(2, line.indexOf(")")).split(",");
+                    const x = -parseFloat(parts[0]) * 0.1;
+                    const y = -parseFloat(parts[1]) * 0.1;
+                    const z = parseFloat(parts[2]) * 0.1;
+                    verts.push(new THREE.Vector3(x, y, z));
+                } 
+                else if (line === "<p>" || line === "[p]") {
+                    flushPoly();
+                    pStartIndex = i;
+                    normalLineIndex = -1;
+                    currentColor = new THREE.Color(0.5, 0.5, 0.5);
+                    currentAlpha = 1.0;
+                    currentEngineNormal.set(0, 1, 0);
+                    hasGroupNormal = false;
+                } 
+                else if (line.startsWith("c(")) {
+                    const parts = line.substring(2, line.indexOf(")")).split(",");
+                    currentColor.setRGB(parseInt(parts[0])/255, parseInt(parts[1])/255, parseInt(parts[2])/255);
+                    if (parts.length > 3) currentAlpha = parseInt(parts[3])/255;
+                } 
+                else if (line.startsWith("n(")) {
+                    normalLineIndex = i;
+                    const parts = line.substring(2, line.indexOf(")")).split(",");
+                    
+                    currentEngineNormal.set(parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2]));
+                    hasGroupNormal = true;
+                } 
+                else if (line.startsWith("t(")) {
+                    totalPolys++;
+                    const parts = line.substring(2, line.indexOf(")")).split(",");
+                    const i0 = parseInt(parts[0]), i1 = parseInt(parts[1]), i2 = parseInt(parts[2]);
+                    const mask = parseInt(parts[4] || "0");
+
+                    const v0 = verts[i0], v1 = verts[i1], v2 = verts[i2];
+                    if (v0 && v1 && v2) {
+                        currentPositions.push(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+                        currentColors.push(currentColor.r, currentColor.g, currentColor.b, currentAlpha,
+                                           currentColor.r, currentColor.g, currentColor.b, currentAlpha,
+                                           currentColor.r, currentColor.g, currentColor.b, currentAlpha);
+                        
+                        if (hasGroupNormal) {
+                            const webglNorm = new THREE.Vector3(currentEngineNormal.x, currentEngineNormal.y, currentEngineNormal.z).normalize();
+                            currentNormals.push(webglNorm.x, webglNorm.y, webglNorm.z,
+                                                webglNorm.x, webglNorm.y, webglNorm.z,
+                                                webglNorm.x, webglNorm.y, webglNorm.z);
+                        }
+
+                        if (mask & 1) edgePositions.push(v0.x, v0.y, v0.z, v1.x, v1.y, v1.z);
+                        if (mask & 2) edgePositions.push(v1.x, v1.y, v1.z, v2.x, v2.y, v2.z);
+                        if (mask & 4) edgePositions.push(v2.x, v2.y, v2.z, v0.x, v0.y, v0.z);
+                    }
+                } 
+                else if (line === "</p>" || line === "[/p]") {
+                    flushPoly();
+                }
+            }
+            flushPoly();
+
+            group.userData = { vertexCount: verts.length, polyCount: totalPolys };
+            return group;
+        }
+
+        function loadModelIntoScene(xradData, indexToSelect = -1) {
+            if (currentModel) {
+                disposeModel(currentModel);
+            }
+            currentModel = parseXRadToThree(xradData);
+            scene.add(currentModel);
+
+            document.getElementById('status').innerHTML = `<b>Loaded:</b> ${currentFileName}<br><b>Vertices:</b> ${currentModel.userData.vertexCount} | <b>Polygons:</b> ${currentModel.userData.polyCount}`;
+            document.getElementById('exportBtn').disabled = false;
+
+            if (indexToSelect !== -1 && currentModel.children[indexToSelect]) {
+                selectMesh(currentModel.children[indexToSelect]);
+            } else {
+                deselectMesh();
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initViewer();
+
+            const dragOverlay = document.getElementById('drag-overlay');
+            
+            window.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dragOverlay.style.display = 'block';
+            });
+
+            window.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                if (e.clientX === 0 || e.clientY === 0) dragOverlay.style.display = 'none';
+            });
+
+            window.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dragOverlay.style.display = 'none';
+
+                const file = e.dataTransfer.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const text = event.target.result;
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    currentFileName = file.name.split('.')[0];
+
+                    try {
+                        if (ext === 'xrad') {
+                            currentXRadData = text;
+                        } else if (ext === 'rad' || ext === 'r3d') {
+                            currentXRadData = convertModelToXRad(text);
+                        } else {
+                            alert("Unsupported file format! Please drop a .rad, .r3d, or .xrad file.");
+                            return;
+                        }
+                        loadModelIntoScene(currentXRadData);
+                    } catch (err) {
+                        alert("Error loading model: " + err.message);
+                        console.error(err);
+                    }
+                };
+                reader.readAsText(file);
+            });
+
+            document.getElementById('btnApplyNorm').addEventListener('click', () => {
+                let nx = parseFloat(document.getElementById('normX').value) || 0;
+                let ny = parseFloat(document.getElementById('normY').value) || 0;
+                let nz = parseFloat(document.getElementById('normZ').value) || 0;
+                updateSelectedNormal(nx, ny, nz);
+            });
+
+            document.getElementById('btnFlipX').addEventListener('click', () => {
+                document.getElementById('normX').value = -parseFloat(document.getElementById('normX').value || 0);
+                document.getElementById('btnApplyNorm').click();
+            });
+
+            document.getElementById('btnFlipY').addEventListener('click', () => {
+                document.getElementById('normY').value = -parseFloat(document.getElementById('normY').value || 0);
+                document.getElementById('btnApplyNorm').click();
+            });
+
+            document.getElementById('btnFlipZ').addEventListener('click', () => {
+                document.getElementById('normZ').value = -parseFloat(document.getElementById('normZ').value || 0);
+                document.getElementById('btnApplyNorm').click();
+            });
+
+            document.getElementById('btnFlipAll').addEventListener('click', () => {
+                document.getElementById('normX').value = -parseFloat(document.getElementById('normX').value || 0);
+                document.getElementById('normY').value = -parseFloat(document.getElementById('normY').value || 0);
+                document.getElementById('normZ').value = -parseFloat(document.getElementById('normZ').value || 0);
+                document.getElementById('btnApplyNorm').click();
+            });
+
+            document.getElementById('btnCopyNorm').addEventListener('click', () => {
+                copiedNormal = {
+                    x: parseFloat(document.getElementById('normX').value || 0),
+                    y: parseFloat(document.getElementById('normY').value || 0),
+                    z: parseFloat(document.getElementById('normZ').value || 0),
+                };
+            });
+
+            document.getElementById('btnPasteNorm').addEventListener('click', () => {
+                if (!copiedNormal) return;
+                document.getElementById('normX').value = copiedNormal.x;
+                document.getElementById('normY').value = copiedNormal.y;
+                document.getElementById('normZ').value = copiedNormal.z;
+                document.getElementById('btnApplyNorm').click();
+            });
+
+            document.getElementById('chkHighlightBackfaces').addEventListener('change', (e) => {
+                if (currentModel) {
+                    currentModel.children.forEach(child => {
+                        if (child.userData.isPoly && child.material.uniforms) {
+                            child.material.uniforms.uHighlightBackfaces.value = e.target.checked ? 1.0 : 0.0;
+                        }
+                    });
+                }
+            });
+
+            document.getElementById('chkAutoFix').addEventListener('change', (e) => {
+                // Feature only triggers on next load/drop.
+            });
+
+            document.getElementById('exportBtn').addEventListener('click', () => {
+                if (!currentXRadData) return;
+                const blob = new Blob([currentXRadData], { type: "text/plain" });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = currentFileName + ".xrad";
+                a.click();
+            });
+        });
+    </script>
+</body>
+</html>
