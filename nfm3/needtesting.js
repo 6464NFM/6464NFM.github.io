@@ -37,6 +37,10 @@ if (typeof customConfigLoaded === 'undefined') {
 loadTheMusic(); //defined in madloader, should only be run when monoMusic is defined!
 init();
 
+
+// --- MASTER LOOP & LERP UTILITIES ---
+window.smoothRendering = false; // nobody reads the code, so what if i add secret smooth fps?
+window.targetFPS = 60; // Set to 0 to uncap
 dynamicFOV = true;
 //gamePlaysItself = true;
 
@@ -370,6 +374,7 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 						(parts.length > 3 ? parseInt(parts[3]) / 255.0 : 1.0)
 					];
 					if (current_color[3] < 1.0) rad.alpha = 1;
+					//current_color[3] = 1.0; //disable glass
 				} else if (line.startsWith("n(")) {
 					var parts = line.substring(2, line.indexOf(")")).split(",");
 					current_normal = [parseFloat(parts[0]), parseFloat(parts[1]), parseFloat(parts[2])];
@@ -2470,71 +2475,83 @@ function colorbgstforend() {
 	gl.bindBuffer(gl.ARRAY_BUFFER, bgst.cbuf);
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(col), gl.STATIC_DRAW);
 }
-function drawparticle(rad) {
+function drawparticle(rad, ox, oy, oz, omat) {
 	if (rad.loaded) {
 		if (rad.alpha) {
 			gl.enable(gl.BLEND);
 			gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		}
-		if (rad.mat == null) rad.mat = [];
-		rad.mat[12] = (rad.x - camx);
-		rad.mat[13] = (rad.y - camy);
-		rad.mat[14] = (rad.z - camz);
+		
+		// Use interpolated overrides if provided, otherwise use the object's raw state
+		var rx = ox !== undefined ? ox : rad.x;
+		var ry = oy !== undefined ? oy : rad.y;
+		var rz = oz !== undefined ? oz : rad.z;
+		var rmat = omat !== undefined ? omat : rad.mat;
+		if (rmat == null) rmat = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+
+		// Build a temporary ModelView matrix for the shader so we don't mutate the original!
+		var mvMat = new Float32Array(16);
+		for(var i=0; i<16; i++) mvMat[i] = rmat[i];
+		mvMat[12] = (rx - camx);
+		mvMat[13] = (ry - camy);
+		mvMat[14] = (rz - camz);
+
 		gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
 		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexPosition);
+		
 		gl.bindBuffer(gl.ARRAY_BUFFER, rad.cbuf);
 		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexColor);
+		
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.ibuf);
 		gl.useProgram(programInfo[0].program);
+		
 		gl.uniformMatrix4fv(programInfo[0].uniformLocations.projectionMatrix, false, cmat);
-		gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, rad.mat);
+		gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, mvMat);
 		gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_SHORT, 0);
-		if (rad.alpha) {
-			gl.disable(gl.BLEND);
-		}
+		
+		if (rad.alpha) gl.disable(gl.BLEND);
 	}
 }
 
 
-function drawrad3D(rad) {
+function drawrad3D(rad, ox, oy, oz, omat) {
 	if (!rad.loaded) return;
 	lastCPActive = (onlastcheck && rad.isLastCP);
 
 	if (rad.alpha) {
 		gl.enable(gl.BLEND);
-		if (rad.alpha == 1) {
-			gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-		}
-		if (rad.alpha == 2) {
-			gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_COLOR);
-		}
-		if (rad.alpha == 3) {
-			gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_ALPHA);
-		}
+		if (rad.alpha == 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+		if (rad.alpha == 2) gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_COLOR);
+		if (rad.alpha == 3) gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_ALPHA);
 	}
 
 	var pro = 1;
-	if (rad.cbuf) {
-		pro = 5; // Maps legacy colored-buffered models to Program 5 instead of 0
-	} else {
+	if (rad.cbuf) pro = 5; 
+	else {
 		if (rad.ownshade) pro = 2;
-		if (rad.ownlight) {
-			pro = 3;
-			if (rad.ownshade) pro = 4;
-		}
+		if (rad.ownlight) { pro = 3; if (rad.ownshade) pro = 4; }
 	}
 
-	if (rad.mat == null) rad.mat = [];
-	rad.mat[12] = (rad.x - camx);
-	rad.mat[13] = (rad.y - camy);
-	rad.mat[14] = (rad.z - camz);
+	// Use interpolated overrides if provided, otherwise use the object's raw state
+	var rx = ox !== undefined ? ox : rad.x;
+	var ry = oy !== undefined ? oy : rad.y;
+	var rz = oz !== undefined ? oz : rad.z;
+	var rmat = omat !== undefined ? omat : rad.mat;
+	if (rmat == null) rmat = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+
+	// Build a temporary ModelView matrix for the shader so we don't mutate the original!
+	var mvMat = new Float32Array(16);
+	for(var i=0; i<16; i++) mvMat[i] = rmat[i];
+	mvMat[12] = (rx - camx);
+	mvMat[13] = (ry - camy);
+	mvMat[14] = (rz - camz);
 
 	var normalMatrix = null;
-	if (pro == 1 || pro == 5) { // Compute standard normal matrix calculations for program 5 as well
+	if (pro == 1 || pro == 5) { 
 		normalMatrix = mat4.create();
-		mat4.invert(normalMatrix, rad.mat);
+		mat4.invert(normalMatrix, mvMat);
 		mat4.transpose(normalMatrix, normalMatrix);
 	}
 
@@ -2543,7 +2560,7 @@ function drawrad3D(rad) {
 	gl.vertexAttribPointer(programInfo[pro].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
 	gl.enableVertexAttribArray(programInfo[pro].attribLocations.vertexPosition);
 
-	if (pro == 1 || pro == 5) { // Bind computed flat normals
+	if (pro == 1 || pro == 5) {
 		gl.bindBuffer(gl.ARRAY_BUFFER, rad.nbuf);
 		gl.vertexAttribPointer(programInfo[pro].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(programInfo[pro].attribLocations.vertexNormal);
@@ -2562,31 +2579,18 @@ function drawrad3D(rad) {
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.ibuf);
 	gl.useProgram(programInfo[pro].program);
 
-	// --- Safe Uniform Guard for Program 5 ---
 	if (pro == 5) {
-		if (programInfo[5].uniformLocations.applySnapFilter) {
-			gl.uniform1f(programInfo[5].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
-		}
-		if (programInfo[5].uniformLocations.uBraking) {
-			var brakingValue = rad.isBraking ? 1.0 : 0.0;
-			gl.uniform1f(programInfo[5].uniformLocations.uBraking, brakingValue);
-		}
-		if (programInfo[5].uniformLocations.uTime) {
-			gl.uniform1f(programInfo[5].uniformLocations.uTime, chkflk); // Pass chkflk as time counter
-		}
-		if (programInfo[5].uniformLocations.uLastCheckRemaining) {
-			gl.uniform1f(programInfo[5].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
-		}
-		if (programInfo[5].uniformLocations.uAutoFlip) {
-			gl.uniform1f(programInfo[5].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
-		}
-		if (programInfo[5].uniformLocations.uDisableFog) {
-			gl.uniform1f(programInfo[5].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
-		}
+		if (programInfo[5].uniformLocations.applySnapFilter) gl.uniform1f(programInfo[5].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
+		if (programInfo[5].uniformLocations.uBraking) gl.uniform1f(programInfo[5].uniformLocations.uBraking, rad.isBraking ? 1.0 : 0.0);
+		if (programInfo[5].uniformLocations.uTime) gl.uniform1f(programInfo[5].uniformLocations.uTime, chkflk); 
+		if (programInfo[5].uniformLocations.uLastCheckRemaining) gl.uniform1f(programInfo[5].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
+		if (programInfo[5].uniformLocations.uAutoFlip) gl.uniform1f(programInfo[5].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
+		if (programInfo[5].uniformLocations.uDisableFog !== undefined) gl.uniform1f(programInfo[5].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
+		if (programInfo[5].uniformLocations.uUnlit) gl.uniform1f(programInfo[5].uniformLocations.uUnlit, rad.ownshade ? 1.0 : 0.0);
 	}
 
 	gl.uniformMatrix4fv(programInfo[pro].uniformLocations.projectionMatrix, false, cmat);
-	gl.uniformMatrix4fv(programInfo[pro].uniformLocations.modelViewMatrix, false, rad.mat);
+	gl.uniformMatrix4fv(programInfo[pro].uniformLocations.modelViewMatrix, false, mvMat); // Use temp matrix
 	if (pro == 1 || pro == 5) {
 		gl.uniformMatrix4fv(programInfo[pro].uniformLocations.normalMatrix, false, normalMatrix);
 	}
@@ -2594,38 +2598,23 @@ function drawrad3D(rad) {
 	if (pro !== 0 && pro !== 5) {
 		gl.activeTexture(gl.TEXTURE0);
 		if (!rad.tgn) {
-			if (rad.nt == 1) {
-				gl.bindTexture(gl.TEXTURE_2D, rad.texture);
-			} else {
-				gl.bindTexture(gl.TEXTURE_2D, rad.texture[rad.ont]);
-			}
-		} else {
-			gl.bindTexture(gl.TEXTURE_2D, tgroup[(rad.tgn - 1)].texture);
-		}
+			if (rad.nt == 1) gl.bindTexture(gl.TEXTURE_2D, rad.texture);
+			else gl.bindTexture(gl.TEXTURE_2D, rad.texture[rad.ont]);
+		} else gl.bindTexture(gl.TEXTURE_2D, tgroup[(rad.tgn - 1)].texture);
 		gl.uniform1i(programInfo[pro].uniformLocations.uSampler, 0);
 	}
-	
-	if (pro == 5) {
-		gl.uniform1f(programInfo[5].uniformLocations.uUnlit, rad.ownshade ? 1.0 : 0.0);
-	}
 
-	if (rad.use32Int) {
-		gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_INT, 0);
-	} else {
-		gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_SHORT, 0);
-	}
+	if (rad.use32Int) gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_INT, 0);
+	else gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_SHORT, 0);
 
 	// === BLACK OUTLINES FOR LEGACY .rad MODELS ===
 	if (rad.hasEdges && rad.edgebuf && rad.edgeColorBuf) {
-		gl.disable(gl.BLEND); // Outline colors are pre-darkened and opaque
-		
+		gl.disable(gl.BLEND);
 		gl.useProgram(programInfo[0].program); 
-		
 		gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
 		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexPosition);
 		
-		// Pass normal attributes to Program 0 so gr(-13) outlines can be read
 		if (programInfo[0].attribLocations.vertexNormal !== undefined && programInfo[0].attribLocations.vertexNormal !== -1) {
 			gl.bindBuffer(gl.ARRAY_BUFFER, rad.nbuf);
 			gl.vertexAttribPointer(programInfo[0].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
@@ -2633,34 +2622,26 @@ function drawrad3D(rad) {
 		}
 		
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.edgebuf);
-		
 		gl.bindBuffer(gl.ARRAY_BUFFER, rad.edgeColorBuf);
 		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
 		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexColor);
 		
 		gl.uniformMatrix4fv(programInfo[0].uniformLocations.projectionMatrix, false, cmat);
-		gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, rad.mat);
+		gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, mvMat); // Use temp matrix
 		
-		if (programInfo[0].uniformLocations.normalMatrix) {
-			gl.uniformMatrix4fv(programInfo[0].uniformLocations.normalMatrix, false, normalMatrix);
-		}
+		if (programInfo[0].uniformLocations.normalMatrix) gl.uniformMatrix4fv(programInfo[0].uniformLocations.normalMatrix, false, normalMatrix);
+		if (programInfo[0].uniformLocations.uLastCheckRemaining) gl.uniform1f(programInfo[0].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
+		if (programInfo[0].uniformLocations.uTime) gl.uniform1f(programInfo[0].uniformLocations.uTime, chkflk);
+		if (programInfo[0].uniformLocations.uAutoFlip) gl.uniform1f(programInfo[0].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
+		if (programInfo[0].uniformLocations.uDisableFog !== undefined) gl.uniform1f(programInfo[0].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
 		
-		// Pass the live checkpoint remaining flag to Program 0
-		if (programInfo[0].uniformLocations.uLastCheckRemaining) {
-			gl.uniform1f(programInfo[0].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
-		}
-		if (programInfo[0].uniformLocations.uTime) {
-			gl.uniform1f(programInfo[0].uniformLocations.uTime, chkflk);
-		}
-		if (programInfo[0].uniformLocations.uAutoFlip) {
-			gl.uniform1f(programInfo[0].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
-		}
 		gl.lineWidth(2.5);
 		gl.drawElements(gl.LINES, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
-		
 	}
-}
 
+	// We MUST attach the temp mvMat to the object temporarily so drawDebugCollisions can read it!
+	rad.col_mvMat = mvMat; 
+}
 
 
 
@@ -2672,16 +2653,16 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
 	var fogcol = [];
 	for (var i = 0; i < 3; i++) {
 		ambcol[i] = (0.6 + (snap[i] * 0.6));
-		ambcol[i] *= 0.76;
+		//ambcol[i] *= 0.76;
 		defcol[i] = (0.7 + (snap[i] * 0.7));
-		defcol[i] *= 0.76;
+		//defcol[i] *= 0.76;
 		owncol[i] = (1.2 + (snap[i] * 1.2));
-		owncol[i] *= 0.76;
+		//owncol[i] *= 0.76;
 		litcol[i] = (1.3 + (snap[i] * 1.3));
-		litcol[i] *= 0.76;
+		//litcol[i] *= 0.76;
 		fogcol[i] = (fogc[i] / 255);
 		fogcol[i] = (fogcol[i] + (fogcol[i] * snap[i]));
-		fogcol[i] *= 0.76;
+		//fogcol[i] *= 0.76;
 	}
 	var dirvec = [ldx, ldy, ldz];
 	var fogstart = 100;
@@ -2767,8 +2748,7 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
 			}
 		}`;
 	
-	fsSource[0] = `precision mediump float; varying vec3 v_posf; varying lowp vec4 vColor; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);gl_FragColor = mix(vColor, u_fogColor, fogAmount); }`;
-	vsSource[1] = `attribute vec4 aVertexPosition; attribute vec3 aVertexNormal; attribute vec2 aTextureCoord; uniform mat4 uNormalMatrix; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting;varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight = vec3(` + ambcol[0] + `,` + ambcol[1] + `,` + ambcol[2] + `); highp vec3 directionalLightColor = vec3(` + defcol[0] + `,` + defcol[1] + `,` + defcol[2] + `); highp vec3 directionalVector = normalize(vec3(` + dirvec[0] + `,` + dirvec[1] + `,` + dirvec[2] + `)); highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0); vLighting = ambientLight + (directionalLightColor * directional); v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
+	fsSource[0] = `precision mediump float; varying vec3 v_posf; varying lowp vec4 vColor; uniform float uDisableFog; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance) * (1.0 - uDisableFog); gl_FragColor = mix(vColor, u_fogColor, fogAmount); }`;	vsSource[1] = `attribute vec4 aVertexPosition; attribute vec3 aVertexNormal; attribute vec2 aTextureCoord; uniform mat4 uNormalMatrix; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting;varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight = vec3(` + ambcol[0] + `,` + ambcol[1] + `,` + ambcol[2] + `); highp vec3 directionalLightColor = vec3(` + defcol[0] + `,` + defcol[1] + `,` + defcol[2] + `); highp vec3 directionalVector = normalize(vec3(` + dirvec[0] + `,` + dirvec[1] + `,` + dirvec[2] + `)); highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0); vLighting = ambientLight + (directionalLightColor * directional); v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
 	fsSource[1] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
 	vsSource[2] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight=vec3(` + owncol[0] + `,` + owncol[1] + `,` + owncol[2] + `); vLighting = ambientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
 	fsSource[2] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
@@ -2846,7 +2826,6 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
 			// lighting value for models
 			float f1 = transformedNormal.y + 0.08; 
 			f1 = clamp(f1, 0.45, 0.9);
-			if (uUnlit > 0.5) f1 = 1.0;
 			
 			// --- Stage Snap Color Filter ---
 			vec3 finalColor = aVertexColor.rgb;
@@ -2867,12 +2846,19 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
 			if (activeLight) {
 				f1 = 1.0;
 				finalColor = finalColor * lightIntensity;
-			} else {
+			} else if (uUnlit < 0.5) { 
+				// ONLY apply the shader snap-filter to regular track/car models.
+				// Our procedural background is already pre-snapped perfectly in JS!
 				if (!isGlass) {
 					float factor = isLight ? applySnapFilter : 1.0;
 					vec3 snapFactor = vec3(` + snap[0] + `, ` + snap[1] + `, ` + snap[2] + `);
 					finalColor = clamp(finalColor + finalColor * (snapFactor * factor), 0.0, 1.0);
 				}
+			}
+
+			if (uUnlit > 0.5) {
+				//f1 = 0.76;
+				f1 = 1.0;
 			}
 			
 			vColor = vec4(finalColor * f1, aVertexColor.a); 
@@ -2948,6 +2934,7 @@ function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
 			uLastCheckRemaining: gl.getUniformLocation(shaderProgram[0], 'uLastCheckRemaining'),
 			uTime: gl.getUniformLocation(shaderProgram[0], 'uTime'),
 			uAutoFlip: gl.getUniformLocation(shaderProgram[0], 'uAutoFlip'),
+			uDisableFog: gl.getUniformLocation(shaderProgram[0], 'uDisableFog'),
 		}
 	};
 	programInfo[1] = {
@@ -3829,6 +3816,9 @@ function loadstage() {
 					if (strtsWith(line, "distfog")) {
 						fogdist = getIntValue("distfog", line, 0);
 					}
+					if (strtsWith(line, "fadefrom")) {
+						fogdist = getIntValue("fadefrom", line, 0);
+					}
 					if (strtsWith(line, "bnd")) {
 						for (var k = 0; k < 4; k++) {
 							bounds[k] = getIntValue("bnd", line, k);
@@ -3914,7 +3904,7 @@ function loadstage() {
 						obo[nb].z = (parseFloat(params[2].trim()) / 10);
 						
 						var rot;
-						if (params.length >= 5) {
+						if ((params.length >= 5) && (obo[nb].typ != 54)) {
 							// 5 parameters: type, x, z, y, rotation
 							obo[nb].y = - (parseFloat(params[3].trim()) / 10) + 25; //25 cos 0 is 250 in stage code
 							rot = parseFloat(params[4].trim());
@@ -3924,12 +3914,13 @@ function loadstage() {
 							rot = parseFloat(params[3].trim());
 						}
 						
-						mat4.rotate(obo[nb].mat, obo[nb].mat, (rot * (Math.PI / 180)), [0, 1, 0]);
-						
 						// Vanilla compatibility check for standard air checkpoint (typ 54)
-						if (obo[nb].typ == 54 && params.length < 5) {
+						if (obo[nb].typ == 54) {
 							obo[nb].y = - (getFloatValue("chk", line, 4) / 10);
 						}
+						
+						mat4.rotate(obo[nb].mat, obo[nb].mat, (rot * (Math.PI / 180)), [0, 1, 0]);
+						
 						
 						if (Math.abs(rot) == 90) {
 							obo[nb].bx = build[obo[nb].typ].bz;
@@ -4730,7 +4721,6 @@ var ronf = 0;
 var vert = false;
 var td = false;
 var htrns = 0;
-var updateframe = false;
 function gameworks() {
 	
 	if (dynamicFOV) {
@@ -4749,6 +4739,7 @@ function gameworks() {
 	} else {
 		var fieldOfView = ((FOV * Math.PI) / 180);
 	}
+	window.globalFieldOfView = fieldOfView;
 	
 	var aspect = (canw / canh);
 	// Increased zNear from 0.1 to 2.0 to give the depth buffer MUCH better precision 
@@ -4759,9 +4750,15 @@ function gameworks() {
 	// the distant procedural clouds and mountains from being sliced invisible!
 	var zFar = 100000.0;
 	//var zFar = Math.max(7000, fogdist + 2000); 
+	
+	// 1. Dynamic Matrix (For Cars & Ground)
 	cmat = mat4.create();
-
 	mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
+
+	// 2. Static Matrix (For Skybox)
+	var staticFov = (FOV * Math.PI) / 180;
+	window.skyCmat = mat4.create();
+	mat4.perspective(window.skyCmat, staticFov, aspect, zNear, zFar);
 	onelec = false;
 	if (fase == 7) {
 		if (raceStartCountdown == 0) {
@@ -5097,8 +5094,8 @@ function gameworks() {
 	}
 	
 	if (camode == 5) {
-		car[0].y = 100;
-		gravity = 0;
+		//car[0].y = 100;
+		//gravity = 0;
 
 		//carzy = car[0].zy;
 							//while (carzy > 360) {
@@ -5144,29 +5141,37 @@ function gameworks() {
 		camy = (car[cim].y + 25 + rel1);
 		camz = (car[cim].z + (80 * mcos(kcxz)));
 		
-		if (u[0].up) {
+		if (u[1].up) {
 			rel1+=1;
 		}
-		if (u[0].down) {
+		if (u[1].down) {
 			rel1-=1;
 		}
-		if (u[0].left) {
+		if (u[1].left) {
 			rel2-=1;
 		}
-		if (u[0].right) {
+		if (u[1].right) {
 			rel2+=1;
 		}
 	}
 		
-	// Lock the procedural skybox to the camera's position. 
-	// Because it's drawn with depth testing OFF, its small physical size (100 units) looks infinite!
+	// Apply Pitch and Yaw to both matrices
+	mat4.rotate(cmat, cmat, (camzy * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(cmat, cmat, (camxz * (Math.PI / 180)), [0, 1, 0]);
+
+	mat4.rotate(window.skyCmat, window.skyCmat, (camzy * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(window.skyCmat, window.skyCmat, (camxz * (Math.PI / 180)), [0, 1, 0]);
+
+	// Lock the V-Shape Sky to the camera's position
 	skydom.x = camx;
 	skydom.y = camy; 
 	skydom.z = camz;
 	skydom.mat = mat4.create(); 
-	mat4.rotate(skydom.mat, skydom.mat, (-camxz * (Math.PI / 180)), [0, 1, 0])
-	mat4.rotate(cmat, cmat, (camzy * (Math.PI / 180)), [1, 0, 0]);
-	mat4.rotate(cmat, cmat, (camxz * (Math.PI / 180)), [0, 1, 0]);
+	
+	// Rotate the skybox to perfectly cancel out the camera's Yaw (camxz). 
+	// This locks the flat face of the 'V' perfectly parallel to your screen!
+	mat4.rotate(skydom.mat, skydom.mat, (-camxz * (Math.PI / 180)), [0, 1, 0]);
+
 	updateframe = true;
 }
 var csxz = 0, cszy = 0;
@@ -5635,293 +5640,287 @@ function unlockedcar() {
 		updateframe = true;
 	}
 }
-function render(now) {
-	if (fase == 7 || fase == 8 || fase == 9 || fase == 10) {
-		if (updateframe) {
-			gl.clearColor(0.0, 0.0, 0.0, 1.0);
-			gl.clearDepth(1.0);
-			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-			
-			// --- RENDER BACKGROUND SCENERY (NO DEPTH TESTING) ---
-			gl.disable(gl.DEPTH_TEST);
-			drawrad3D(skydom);
-			drawrad3D(ground); // Solid Base Floor + Detailed Dirt Patches
-			// Render the infinite base floor under everything else
-			if (window.proceduralMountains && window.proceduralMountains.loaded) drawrad3D(window.proceduralMountains);
-			if (window.proceduralClouds && window.proceduralClouds.loaded) drawrad3D(window.proceduralClouds);
-			
-			// --- RENDER TRACK & CARS (WITH DEPTH TESTING) ---
-			gl.enable(gl.DEPTH_TEST);
-			gl.depthFunc(gl.LEQUAL);
 
-			for (var i = 0; i < nb; i++) {
+
+function render() {
+	var alpha = physicsAccumulator / PHYSICS_TICK_MS;
+	if (!window.smoothRendering) alpha = 1.0; 
+	if (alpha > 1.0) alpha = 1.0;
+	if (alpha < 0.0) alpha = 0.0;
+
+	var bCamX = camx, bCamY = camy, bCamZ = camz;
+	
+	camx = lerp(pcamx, bCamX, alpha);
+	camy = lerp(pcamy, bCamY, alpha);
+	camz = lerp(pcamz, bCamZ, alpha);
+	var iCamXZ = lerpAngle(pcamxz, camxz, alpha);
+	var iCamZY = lerpAngle(pcamzy, camzy, alpha);
+	var iFov = lerp(pFieldOfView, window.globalFieldOfView || (55 * Math.PI/180), alpha);
+
+	var aspect = (canw / canh);
+	var zNear = 0.1;
+	var zFar = 100000.0;
+
+	cmat = mat4.create();
+	mat4.perspective(cmat, iFov, aspect, zNear, zFar);
+	mat4.rotate(cmat, cmat, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(cmat, cmat, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+
+	window.skyCmat = mat4.create();
+	mat4.perspective(window.skyCmat, (55 * Math.PI / 180), aspect, zNear, zFar);
+	mat4.rotate(window.skyCmat, window.skyCmat, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(window.skyCmat, window.skyCmat, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+
+	skydom.x = camx;
+	skydom.y = camy; 
+	skydom.z = camz;
+	skydom.mat = mat4.create(); 
+	mat4.rotate(skydom.mat, skydom.mat, (-iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+
+	if (fase == 7 || fase == 8 || fase == 9 || fase == 10) {
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		
+		gl.disable(gl.DEPTH_TEST);
+		drawrad3D(skydom); 
+		drawrad3D(ground); 
+		if (window.proceduralMountains && window.proceduralMountains.loaded) drawrad3D(window.proceduralMountains);
+		if (window.proceduralClouds && window.proceduralClouds.loaded) drawrad3D(window.proceduralClouds);
+		
+		gl.enable(gl.DEPTH_TEST);
+		gl.depthFunc(gl.LEQUAL);
+
+		for (var i = 0; i < nb; i++) {
+			var obj = build[obo[i].typ];
+			if (obo[i].iscp) {
+				if (((oncheckpoint + 1) == obo[i].iscp)) obj.ownshade = true;
+				else { obj.ownshade = false; obj.ownlight = false; }
+			}
+			
+			var ix = lerp(obo[i].px !== undefined ? obo[i].px : obo[i].x, obo[i].x, alpha);
+			var iy = lerp(obo[i].py !== undefined ? obo[i].py : obo[i].y, obo[i].y, alpha);
+			var iz = lerp(obo[i].pz !== undefined ? obo[i].pz : obo[i].z, obo[i].z, alpha);
+			var imat = lerpMat(obo[i].pmat, obo[i].mat, alpha);
+			
+			obj.isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
+			drawrad3D(obj, ix, iy, iz, imat);
+			drawDebugCollisions(obj);
+		}
+
+		for (var i = 0; i < nspr; i++) {
+			if (sprk[i].stat != 0) drawparticle(spark[sprk[i].typ], sprk[i].x, sprk[i].y, sprk[i].z, sprk[i].mat);
+		}
+
+		for (var c = 0; c < ncars; c++) {
+			if (shad[car[c].typ].intershad) gl.disable(gl.DEPTH_TEST);
+			var sObj = shad[car[c].typ];
+			var ix = lerp(sObj.px !== undefined ? sObj.px : sObj.x, sObj.x, alpha);
+			var iy = lerp(sObj.py !== undefined ? sObj.py : sObj.y, sObj.y, alpha);
+			var iz = lerp(sObj.pz !== undefined ? sObj.pz : sObj.z, sObj.z, alpha);
+			var imat = lerpMat(sObj.pmat, sObj.mat, alpha);
+			drawrad3D(sObj, ix, iy, iz, imat);
+			if (sObj.intershad) gl.enable(gl.DEPTH_TEST);
+		}
+
+		for (var i = 0; i < nchp; i++) drawrad3D(chip[i]);
+		
+		for (var c = 0; c < ncars; c++) {
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[car[c].typ][w];
+				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var imat = lerpMat(wh.pmat, wh.mat, alpha);
+
+				if (wh.dist < 250) drawparticle(tiren[car[c].typ][k], ix, iy, iz, imat);
+				else drawparticle(tirel[car[c].typ][k], ix, iy, iz, imat);
+			}
+			
+			var cObj = carobj[car[c].typ];
+			var ix = lerp(car[c].px !== undefined ? car[c].px : car[c].x, car[c].x, alpha);
+			var iy = lerp(car[c].py !== undefined ? car[c].py : car[c].y, car[c].y, alpha);
+			var iz = lerp(car[c].pz !== undefined ? car[c].pz : car[c].z, car[c].z, alpha);
+			var imat = lerpMat(car[c].pmat, car[c].mat, alpha);
+			cObj.isBraking = (u[c].down || u[c].handb);
+			drawrad3D(cObj, ix, iy, iz, imat);
+			drawDebugCollisions(cObj);
+			
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[car[c].typ][w];
+				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var imat = lerpMat(wh.pmat, wh.mat, alpha);
+				drawrad3D(tired[car[c].typ][k], ix, iy, iz, imat);
+			}
+		}
+		
+		if (onelec) {
+			for (var c = 0; c < ncars; c++) {
+				if (car[c].fcnt) {
+					var ix = lerp(car[c].px !== undefined ? car[c].px : car[c].x, car[c].x, alpha);
+					var iy = lerp(car[c].py !== undefined ? car[c].py : car[c].y, car[c].y, alpha);
+					var iz = lerp(car[c].pz !== undefined ? car[c].pz : car[c].z, car[c].z, alpha);
+					mat4.rotate(elec.mat, elec.mat, (Math.random() * 360 * (Math.PI / 180)), [0, 0, 1]);
+					drawrad3D(elec, ix, iy, iz);
+				}
+			}
+		}
+		for (var i = 0; i < nf; i++) {
+			var ix = lerp(obo[fi[i]].px !== undefined ? obo[fi[i]].px : obo[fi[i]].x, obo[fi[i]].x, alpha);
+			var iy = lerp(obo[fi[i]].py !== undefined ? obo[fi[i]].py : obo[fi[i]].y, obo[fi[i]].y, alpha);
+			var iz = lerp(obo[fi[i]].pz !== undefined ? obo[fi[i]].pz : obo[fi[i]].z, obo[fi[i]].z, alpha);
+			var imat = lerpMat(obo[fi[i]].pmat, obo[fi[i]].mat, alpha);
+			drawrad3D(fixdisk, ix, iy, iz, imat);
+		}
+		for (var i = 0; i < nexp; i++) {
+			if (!exp[ewer[i]]) continue;
+			if (exp[ewer[i]].ani != -1) {
+				explode[exp[ewer[i]].typ].ont = Math.floor(exp[ewer[i]].ani);
+				drawrad3D(explode[exp[ewer[i]].typ], exp[ewer[i]].x, exp[ewer[i]].y, exp[ewer[i]].z, exp[ewer[i]].mat);
+			}
+		}
+		for (var k = 0; k < ndst; k++) {
+			var i = dwer[k];
+			if (dust[i].stg != 0) {
+				sprite.texture = dtexture[dust[i].tx][Math.floor(dust[i].ta)];
+				drawrad3D(sprite, dust[i].x, dust[i].y, dust[i].z, dust[i].mat);
+			}
+		}
+	}
+
+	if (fase == 2) {
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.disable(gl.DEPTH_TEST);
+		drawrad3D(bg3D);
+		for (var i = 0; i < 9; i++) {
+			var ui = i; while (ui >= 3) ui -= 3;
+			sprite.texture = stexture[ui];
+			drawrad3D(sprite, smoke[i].x, smoke[i].y, smoke[i].z, smoke[i].mat);
+		}
+		gl.enable(gl.DEPTH_TEST);
+		gl.depthFunc(gl.LEQUAL);
+		
+		var sObj = shad[sel[0]];
+		var ix = lerp(sObj.px !== undefined ? sObj.px : sObj.x, sObj.x, alpha);
+		var iy = lerp(sObj.py !== undefined ? sObj.py : sObj.y, sObj.y, alpha);
+		var iz = lerp(sObj.pz !== undefined ? sObj.pz : sObj.z, sObj.z, alpha);
+		var imat = lerpMat(sObj.pmat, sObj.mat, alpha);
+		drawrad3D(sObj, ix, iy, iz, imat);
+
+		for (var w = 0; w < 4; w++) {
+			var k = (w >= 2) ? 1 : 0;
+			var wh = whl[sel[0]][w];
+			var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+			var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+			var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+			var imat = lerpMat(wh.pmat, wh.mat, alpha);
+			drawparticle(tiren[sel[0]][k], ix, iy, iz, imat);
+		}
+		
+		var cObj = carobj[sel[0]];
+		var ix = lerp(cObj.px !== undefined ? cObj.px : cObj.x, cObj.x, alpha);
+		var iy = lerp(cObj.py !== undefined ? cObj.py : cObj.y, cObj.y, alpha);
+		var iz = lerp(cObj.pz !== undefined ? cObj.pz : cObj.z, cObj.z, alpha);
+		var imat = lerpMat(cObj.pmat, cObj.mat, alpha);
+		drawrad3D(cObj, ix, iy, iz, imat);
+		
+		for (var w = 0; w < 4; w++) {
+			var k = (w >= 2) ? 1 : 0;
+			var wh = whl[sel[0]][w];
+			var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+			var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+			var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+			var imat = lerpMat(wh.pmat, wh.mat, alpha);
+			drawrad3D(tired[sel[0]][k], ix, iy, iz, imat);
+		}
+	}
+
+	if (fase == 4) {
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.disable(gl.DEPTH_TEST);
+		drawparticle(bgst);
+		gl.enable(gl.DEPTH_TEST);
+		gl.depthFunc(gl.LEQUAL);
+		if (!flkun) {
+			for (var i = 0; i < (cp.obi[(cp.n - 1)] + adod); i++) {
+				if (!obo[i]) continue;
+				var obj = build[obo[i].typ];
 				if (obo[i].iscp) {
-					if (((oncheckpoint + 1) == obo[i].iscp) && (Math.round(chkflk) == 0 || chkflk == 1)) {
-						if (Math.round(chkflk) == 0) {
-							build[obo[i].typ].ownshade = true;
-						} else {
-							build[obo[i].typ].ownlight = true;
-						}
+					if (Math.round(chkflk) == 0 || chkflk == 1) {
+						if (Math.round(chkflk) == 0) obj.ownshade = true;
+						else obj.ownlight = true;
 					} else {
-						build[obo[i].typ].ownshade = false;
-						build[obo[i].typ].ownlight = false;
+						obj.ownshade = false; obj.ownlight = false;
 					}
 				}
-				if (obo[i].typ == 29) { // back face culling of thewall... we dont want that as its always buggy!
-					//gl.enable(gl.CULL_FACE);
-					//gl.cullFace(gl.FRONT);
-				}
-				build[obo[i].typ].x = obo[i].x;
-				build[obo[i].typ].y = obo[i].y;
-				build[obo[i].typ].z = obo[i].z;
-				build[obo[i].typ].mat = obo[i].mat;
-				build[obo[i].typ].isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
-				drawrad3D(build[obo[i].typ]);
-				drawDebugCollisions(build[obo[i].typ]);
-				if (obo[i].typ == 29) {
-					gl.disable(gl.CULL_FACE);
-				}
-			}
-			for (var i = 0; i < nspr; i++) {
-				if (sprk[i].stat != 0) {
-					spark[sprk[i].typ].x = sprk[i].x;
-					spark[sprk[i].typ].y = sprk[i].y;
-					spark[sprk[i].typ].z = sprk[i].z;
-					spark[sprk[i].typ].mat = sprk[i].mat;
-					drawparticle(spark[sprk[i].typ]);
-				}
-			}
-			for (var c = 0; c < ncars; c++) {
-				if (shad[car[c].typ].intershad) {
-					gl.disable(gl.DEPTH_TEST);
-				}
-				drawrad3D(shad[car[c].typ]);
-				if (shad[car[c].typ].intershad) {
-					gl.enable(gl.DEPTH_TEST);
-				}
-			}
-			for (var i = 0; i < nchp; i++) {
-				drawrad3D(chip[i]);
-			}
-			if (oncheckpoint != -1) {
-				//drawparticle(cptext);
-				if (onlastcheck) {
-					//drawparticle(fntext);
-				}
-			}
-			for (var c = 0; c < ncars; c++) {
-				for (var w = 0; w < 4; w++) {
-					var k = 0;
-					if (w >= 2) {
-						k = 1;
-					}
-					if (whl[car[c].typ][w].dist < 250) {
-						tiren[car[c].typ][k].x = whl[car[c].typ][w].x;
-						tiren[car[c].typ][k].y = whl[car[c].typ][w].y;
-						tiren[car[c].typ][k].z = whl[car[c].typ][w].z;
-						tiren[car[c].typ][k].mat = whl[car[c].typ][w].mat;
-						drawparticle(tiren[car[c].typ][k]);
-					} else {
-						tirel[car[c].typ][k].x = whl[car[c].typ][w].x;
-						tirel[car[c].typ][k].y = whl[car[c].typ][w].y;
-						tirel[car[c].typ][k].z = whl[car[c].typ][w].z;
-						tirel[car[c].typ][k].mat = whl[car[c].typ][w].mat;
-						drawparticle(tirel[car[c].typ][k]);
-					}
-				}
-				carobj[car[c].typ].x = car[c].x;
-				carobj[car[c].typ].y = car[c].y;
-				carobj[car[c].typ].z = car[c].z;
-				carobj[car[c].typ].mat = car[c].mat;
-				carobj[car[c].typ].isBraking = (u[c].down || u[c].handb);
-				drawrad3D(carobj[car[c].typ]);
-				drawDebugCollisions(carobj[car[c].typ]);
-				for (var w = 0; w < 4; w++) {
-					var k = 0;
-					if (w >= 2) {
-						k = 1;
-					}
-					tired[car[c].typ][k].x = whl[car[c].typ][w].x;
-					tired[car[c].typ][k].y = whl[car[c].typ][w].y;
-					tired[car[c].typ][k].z = whl[car[c].typ][w].z;
-					tired[car[c].typ][k].mat = whl[car[c].typ][w].mat;
-					drawrad3D(tired[car[c].typ][k]);
-				}
-			}
-			if (onelec) {
-				for (var c = 0; c < ncars; c++) {
-					if (car[c].fcnt) {
-						elec.x = car[c].x;
-						elec.y = car[c].y;
-						elec.z = car[c].z;
-						mat4.rotate(elec.mat, elec.mat, (Math.random() * 360 * (Math.PI / 180)), [0, 0, 1]);
-						drawrad3D(elec);
-					}
-				}
+				var ix = lerp(obo[i].px !== undefined ? obo[i].px : obo[i].x, obo[i].x, alpha);
+				var iy = lerp(obo[i].py !== undefined ? obo[i].py : obo[i].y, obo[i].y, alpha);
+				var iz = lerp(obo[i].pz !== undefined ? obo[i].pz : obo[i].z, obo[i].z, alpha);
+				var imat = lerpMat(obo[i].pmat, obo[i].mat, alpha);
+				obj.isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
+				drawrad3D(obj, ix, iy, iz, imat);
+				drawDebugCollisions(obj);
 			}
 			for (var i = 0; i < nf; i++) {
-				fixdisk.x = obo[fi[i]].x;
-				fixdisk.y = obo[fi[i]].y;
-				fixdisk.z = obo[fi[i]].z;
-				fixdisk.mat = obo[fi[i]].mat;
-				drawrad3D(fixdisk);
+				var ix = lerp(obo[fi[i]].px !== undefined ? obo[fi[i]].px : obo[fi[i]].x, obo[fi[i]].x, alpha);
+				var iy = lerp(obo[fi[i]].py !== undefined ? obo[fi[i]].py : obo[fi[i]].y, obo[fi[i]].y, alpha);
+				var iz = lerp(obo[fi[i]].pz !== undefined ? obo[fi[i]].pz : obo[fi[i]].z, obo[fi[i]].z, alpha);
+				var imat = lerpMat(obo[fi[i]].pmat, obo[fi[i]].mat, alpha);
+				drawrad3D(fixdisk, ix, iy, iz, imat);
 			}
-			for (var i = 0; i < nexp; i++) {
-				if (!exp[ewer[i]]) continue;
-				if (exp[ewer[i]].ani != -1) {
-					explode[exp[ewer[i]].typ].x = exp[ewer[i]].x;
-					explode[exp[ewer[i]].typ].y = exp[ewer[i]].y;
-					explode[exp[ewer[i]].typ].z = exp[ewer[i]].z;
-					explode[exp[ewer[i]].typ].ont = Math.floor(exp[ewer[i]].ani);
-					explode[exp[ewer[i]].typ].mat = exp[ewer[i]].mat;
-					drawrad3D(explode[exp[ewer[i]].typ]);
-				}
-			}
-			for (var k = 0; k < ndst; k++) {
-				var i = dwer[k];
-				if (dust[i].stg != 0) {
-					sprite.x = dust[i].x;
-					sprite.y = dust[i].y;
-					sprite.z = dust[i].z;
-					sprite.mat = dust[i].mat;
-					sprite.texture = dtexture[dust[i].tx][Math.floor(dust[i].ta)];
-					drawrad3D(sprite);
-				}
-			}
-			updateframe = false;
 		}
-		requestAnimationFrame(render);
 	}
-	if (fase == 2) {
-		if (updateframe) {
-			gl.clearColor(0.0, 0.0, 0.0, 1.0);
-			gl.clearDepth(1.0);
-			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-			gl.disable(gl.DEPTH_TEST);
-			drawrad3D(bg3D);
-			for (var i = 0; i < 9; i++) {
-				sprite.x = smoke[i].x;
-				sprite.y = smoke[i].y;
-				sprite.z = smoke[i].z;
-				sprite.mat = smoke[i].mat;
-				var ui = i;
-				while (ui >= 3) {
-					ui -= 3;
-				}
-				sprite.texture = stexture[ui];
-				drawrad3D(sprite);
-			}
-			gl.enable(gl.DEPTH_TEST);
-			gl.depthFunc(gl.LEQUAL);
-			drawrad3D(shad[sel[0]]);
-			for (var w = 0; w < 4; w++) {
-				var k = 0;
-				if (w >= 2) {
-					k = 1;
-				}
-				tiren[sel[0]][k].x = whl[sel[0]][w].x;
-				tiren[sel[0]][k].y = whl[sel[0]][w].y;
-				tiren[sel[0]][k].z = whl[sel[0]][w].z;
-				tiren[sel[0]][k].mat = whl[sel[0]][w].mat;
-				drawparticle(tiren[sel[0]][k]);
-			}
-			drawrad3D(carobj[sel[0]]);
-			for (var w = 0; w < 4; w++) {
-				var k = 0;
-				if (w >= 2) {
-					k = 1;
-				}
-				tired[sel[0]][k].x = whl[sel[0]][w].x;
-				tired[sel[0]][k].y = whl[sel[0]][w].y;
-				tired[sel[0]][k].z = whl[sel[0]][w].z;
-				tired[sel[0]][k].mat = whl[sel[0]][w].mat;
-				drawrad3D(tired[sel[0]][k]);
-			}
-			updateframe = false;
-		}
-		requestAnimationFrame(render);
-	}
-	if (fase == 4) {
-		if (updateframe) {
-			gl.clearColor(0.0, 0.0, 0.0, 1.0);
-			gl.clearDepth(1.0);
-			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-			gl.disable(gl.DEPTH_TEST);
-			drawparticle(bgst);
-			gl.enable(gl.DEPTH_TEST);
-			gl.depthFunc(gl.LEQUAL);
-			if (!flkun) {
-				for (var i = 0; i < (cp.obi[(cp.n - 1)] + adod); i++) {
-					if (!obo[i]) continue;
-					if (obo[i].iscp) {
-						if (Math.round(chkflk) == 0 || chkflk == 1) {
-							if (Math.round(chkflk) == 0) {
-								build[obo[i].typ].ownshade = true;
-							} else {
-								build[obo[i].typ].ownlight = true;
-							}
-						} else {
-							build[obo[i].typ].ownshade = false;
-							build[obo[i].typ].ownlight = false;
-						}
-					}
-					build[obo[i].typ].x = obo[i].x;
-					build[obo[i].typ].y = obo[i].y;
-					build[obo[i].typ].z = obo[i].z;
-					build[obo[i].typ].mat = obo[i].mat;
-					build[obo[i].typ].isLastCP = (cp.nsp > 0 && i === cp.obn[cp.nsp - 1]);
-					drawrad3D(build[obo[i].typ]);
-					drawDebugCollisions(build[obo[i].typ]);
-				}
-				for (var i = 0; i < nf; i++) {
-					fixdisk.x = obo[fi[i]].x;
-					fixdisk.y = obo[fi[i]].y;
-					fixdisk.z = obo[fi[i]].z;
-					fixdisk.mat = obo[fi[i]].mat;
-					drawrad3D(fixdisk);
-				}
-			}
-			updateframe = false;
-		}
-		requestAnimationFrame(render);
-	}
+
 	if ((fase == 12) && (fredo == 76)) {
-		if (updateframe) {
-			gl.clearColor(0.0, 0.0, 0.0, 1.0);
-			gl.clearDepth(1.0);
-			gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-			gl.disable(gl.DEPTH_TEST);
-			drawparticle(bgst);
-			gl.enable(gl.DEPTH_TEST);
-			gl.depthFunc(gl.LEQUAL);
-			for (var w = 0; w < 4; w++) {
-				var k = 0;
-				if (w >= 2) {
-					k = 1;
-				}
-				tiren[sel[0]][k].x = whl[sel[0]][w].x;
-				tiren[sel[0]][k].y = whl[sel[0]][w].y;
-				tiren[sel[0]][k].z = whl[sel[0]][w].z;
-				tiren[sel[0]][k].mat = whl[sel[0]][w].mat;
-				drawparticle(tiren[sel[0]][k]);
-			}
-			drawrad3D(carobj[sel[0]]);
-			for (var w = 0; w < 4; w++) {
-				var k = 0;
-				if (w >= 2) {
-					k = 1;
-				}
-				tired[sel[0]][k].x = whl[sel[0]][w].x;
-				tired[sel[0]][k].y = whl[sel[0]][w].y;
-				tired[sel[0]][k].z = whl[sel[0]][w].z;
-				tired[sel[0]][k].mat = whl[sel[0]][w].mat;
-				drawrad3D(tired[sel[0]][k]);
-			}
-			updateframe = false;
+		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearDepth(1.0);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		gl.disable(gl.DEPTH_TEST);
+		drawparticle(bgst);
+		gl.enable(gl.DEPTH_TEST);
+		gl.depthFunc(gl.LEQUAL);
+
+		var cObj = carobj[sel[0]];
+		var ix = lerp(cObj.px !== undefined ? cObj.px : cObj.x, cObj.x, alpha);
+		var iy = lerp(cObj.py !== undefined ? cObj.py : cObj.y, cObj.y, alpha);
+		var iz = lerp(cObj.pz !== undefined ? cObj.pz : cObj.z, cObj.z, alpha);
+		var imat = lerpMat(cObj.pmat, cObj.mat, alpha);
+
+		for (var w = 0; w < 4; w++) {
+			var k = (w >= 2) ? 1 : 0;
+			var wh = whl[sel[0]][w];
+			var wx = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+			var wy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+			var wz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+			var wmat = lerpMat(wh.pmat, wh.mat, alpha);
+			drawparticle(tiren[sel[0]][k], wx, wy, wz, wmat);
 		}
-		requestAnimationFrame(render);
+		drawrad3D(cObj, ix, iy, iz, imat);
+		for (var w = 0; w < 4; w++) {
+			var k = (w >= 2) ? 1 : 0;
+			var wh = whl[sel[0]][w];
+			var wx = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+			var wy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+			var wz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+			var wmat = lerpMat(wh.pmat, wh.mat, alpha);
+			drawrad3D(tired[sel[0]][k], wx, wy, wz, wmat);
+		}
 	}
+
+	camx = bCamX;
+	camy = bCamY;
+	camz = bCamZ;
 }
+
+
 function newcontrol() {
 	return {
 		up: false,
@@ -10147,7 +10146,7 @@ function drive() {
 		}
 		var nzy = 0, nzyr = 0, nxy = 0, nxyr = 0;
 
-		// --- Surface orientation from plane fitting (30Hz Smoothed Implementation) ---
+		// --- Surface orientation from plane fitting (Smoothed & Fixed Implementation) ---
 		if (scy[c][0] != scy[c][1] || scy[c][0] != scy[c][2] || scy[c][0] != scy[c][3]) {
 			
 			// Triangle 1 Normal
@@ -10196,8 +10195,12 @@ function drive() {
 				var wheelbase = Math.abs(car[c].keyz[0] - car[c].keyz[2]);
 				var trackWidth = Math.abs(car[c].keyx[0] - car[c].keyx[1]);
 
-				targetPzy = Math.atan2(avgFrontY - avgRearY, wheelbase) * (180 / Math.PI);
-				targetPxy = Math.atan2(avgLeftY - avgRightY, trackWidth) * (180 / Math.PI);
+				// FIXED THE BUG HERE: Reversed the subtractions because NFM's Y-axis is inverted!
+				// Positive PZY means pitching UP. avgRearY - avgFrontY is positive when pitched up.
+				targetPzy = Math.atan2(avgRearY - avgFrontY, wheelbase) * (180 / Math.PI);
+				
+				// Positive PXY means left side is UP. avgRightY - avgLeftY is positive when left side is up.
+				targetPxy = Math.atan2(avgRightY - avgLeftY, trackWidth) * (180 / Math.PI);
 				validTarget = true;
 			} else {
 				// Undo yaw before decomposing into Pitch/Roll
@@ -10248,27 +10251,25 @@ function drive() {
 				while (targetPzy - pzy[c] > 180) targetPzy -= 360;
 				while (targetPzy - pzy[c] < -180) targetPzy += 360;
 
-				// Calculate the difference between where the car is, and where the floor is
 				var diffPzy = targetPzy - pzy[c];
 				var diffPxy = targetPxy - pxy[c];
 
-				// Cap the maximum rotation per frame to prevent violent snaps on sharp corners
-				var maxSnap = 15.0 * m;
+				// REDUCED from 15.0/0.75 -> 8.0/0.35
+				// This prevents the violent pitching that jolts the wheels out of the 
+				// collision boundary (phasing) or lifts them off the ramp (awkward takeoff)
+				var maxSnap = 15.0 * m; 
 				if (diffPzy > maxSnap) diffPzy = maxSnap;
 				if (diffPzy < -maxSnap) diffPzy = -maxSnap;
 				if (diffPxy > maxSnap) diffPxy = maxSnap;
 				if (diffPxy < -maxSnap) diffPxy = -maxSnap;
 
-				// Interpolate smoothly (This fixes the 30Hz suspension oscillation!)
-				// 0.35 means it corrects 35% of the error every frame.
-				var smoothRate = 0.75 * m; 
+				var smoothRate = 0.35 * m; 
 				if (smoothRate > 1.0) smoothRate = 1.0;
 
 				pzy[c] += diffPzy * smoothRate;
 				pxy[c] += diffPxy * smoothRate;
 			}
 		}
-		// -----------------------------------------------------------------------
 		if (spinlocate) {
 			var dxz = Math.abs(car[c].xz + 45);
 			while (dxz > 180) {
@@ -11554,15 +11555,180 @@ var gpress = [0, 0, 0, 0, 0, 0, 0, 0];
 var gparr = false;
 var needrotate = false;
 var totime = 0, nfr = 0, actat = 20, ltime = -1;
-var m = 0.75;
-/*var m = 0.7;*/
+var m = 0.75; // physics speed!
+/*var m = 0.7 (default) 0.75;*/
 var frgm = 0;
 var canw = 1280, canh = 720, tcanh = 720;
 var mw = 1, mh = 1;
 var avm = 1;
 var adm = 0;
 var fase = 0;
-function gameloop() {
+// --- MASTER LOOP & LERP UTILITIES ---
+var physicsAccumulator = 0;
+var lastFrameTime = performance.now();
+var PHYSICS_TICK_MS = 35; // 35ms matches the original timing for m = 0.7
+var engineStarted = false;
+
+var pcamx = 0, pcamy = 0, pcamz = 0;
+var pcamxz = 0, pcamzy = 0;
+var pFieldOfView = (55 * Math.PI) / 180;
+window.globalFieldOfView = (55 * Math.PI) / 180;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpAngle(a, b, t) {
+	var d = b - a;
+	while (d > 180) d -= 360;
+	while (d < -180) d += 360;
+	return a + d * t;
+}
+var _tempMat = new Float32Array(16);
+function lerpMat(a, b, t) {
+	if (!a || !b) return b;
+	for (var i = 0; i < 16; i++) _tempMat[i] = a[i] + (b[i] - a[i]) * t;
+	return _tempMat;
+}
+
+
+function savePreviousStates() {
+	// 1. Always save the camera, as it is used in almost every phase (menus included)
+	pcamx = camx; pcamy = camy; pcamz = camz;
+	pcamxz = camxz; pcamzy = camzy;
+	pFieldOfView = window.globalFieldOfView;
+
+	// 2. Skip caching heavy 3D game objects during Loading (0) or Main Menu (1)
+	if (typeof fase === 'undefined' || fase < 2) return;
+
+	// 3. Safely cache Cars and Wheels
+	if (typeof ncars !== 'undefined' && typeof car !== 'undefined' && typeof whl !== 'undefined') {
+		for (var c = 0; c < ncars; c++) {
+			if (!car[c]) continue;
+			
+			car[c].px = car[c].x; car[c].py = car[c].y; car[c].pz = car[c].z;
+			if (!car[c].pmat) car[c].pmat = new Float32Array(16);
+			if (car[c].mat) for (var i=0; i<16; i++) car[c].pmat[i] = car[c].mat[i];
+			
+			// Ensure the car has a type and the wheels array exists for it
+			if (car[c].typ !== undefined && whl[car[c].typ]) {
+				for (var w=0; w<4; w++) {
+					var wh = whl[car[c].typ][w];
+					if (!wh) continue;
+					wh.px = wh.x; wh.py = wh.y; wh.pz = wh.z;
+					if (!wh.pmat) wh.pmat = new Float32Array(16);
+					if (wh.mat) for (var i=0; i<16; i++) wh.pmat[i] = wh.mat[i];
+				}
+			}
+		}
+	}
+	
+	// 4. Safely cache Car Models and Shadows
+	if (typeof carobj !== 'undefined' && typeof shad !== 'undefined') {
+		for (var i = 0; i < 19; i++) {
+			var objs = [carobj[i], shad[i]];
+			for (var o = 0; o < objs.length; o++) {
+				var obj = objs[o];
+				if (!obj) continue;
+				obj.px = obj.x; obj.py = obj.y; obj.pz = obj.z;
+				if (!obj.pmat) obj.pmat = new Float32Array(16);
+				if (obj.mat) for (var j=0; j<16; j++) obj.pmat[j] = obj.mat[j];
+			}
+		}
+	}
+	
+	// 5. Safely cache Track Pieces
+	if (typeof nb !== 'undefined' && typeof obo !== 'undefined') {
+		for (var i = 0; i < nb; i++) {
+			if (!obo[i]) continue;
+			obo[i].px = obo[i].x; obo[i].py = obo[i].y; obo[i].pz = obo[i].z;
+			if (!obo[i].pmat) obo[i].pmat = new Float32Array(16);
+			if (obo[i].mat) for (var j=0; j<16; j++) obo[i].pmat[j] = obo[i].mat[j];
+		}
+	}
+}
+
+
+// --- MASTER LOOP & LERP UTILITIES ---
+//window.smoothRendering = false;
+//window.targetFPS = 60; // Set to 60, 144, 30, etc. Set to 0 to uncap (monitor refresh rate).
+
+var physicsAccumulator = 0;
+var lastFrameTime = performance.now();
+var lastRenderTime = performance.now();
+var PHYSICS_TICK_MS = 35; // 35ms matches the original timing for m = 0.7
+var engineStarted = false;
+
+var pcamx = 0, pcamy = 0, pcamz = 0;
+var pcamxz = 0, pcamzy = 0;
+var pFieldOfView = (55 * Math.PI) / 180;
+window.globalFieldOfView = (55 * Math.PI) / 180;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpAngle(a, b, t) {
+	var d = b - a;
+	while (d > 180) d -= 360;
+	while (d < -180) d += 360;
+	return a + d * t;
+}
+var _tempMat = new Float32Array(16);
+function lerpMat(a, b, t) {
+	if (!a || !b) return b;
+	for (var i = 0; i < 16; i++) _tempMat[i] = a[i] + (b[i] - a[i]) * t;
+	return _tempMat;
+}
+
+function mainEngineLoop(currentTime) {
+	requestAnimationFrame(mainEngineLoop);
+
+	if (!currentTime) currentTime = performance.now();
+	var dt = currentTime - lastFrameTime;
+	lastFrameTime = currentTime;
+
+	if (dt > 250) dt = 250; // Cap delta time if tab is minimized
+
+	physicsAccumulator += dt;
+	var didLogicTick = false;
+
+	// 1. Fixed Time Step Logic (Always runs accurately, ignoring the FPS cap)
+	while (physicsAccumulator >= PHYSICS_TICK_MS) {
+		doGameTick(); 
+		physicsAccumulator -= PHYSICS_TICK_MS;
+		didLogicTick = true;
+	}
+
+	// 2. Classic Rendering Optimization
+	if (!window.smoothRendering && !didLogicTick) {
+		return; 
+	}
+
+	// 3. FPS Limiter (Only applies if smooth rendering is ON, as classic is already 28.5 FPS)
+	if (window.smoothRendering && window.targetFPS > 0) {
+		var renderInterval = 1000.0 / window.targetFPS;
+		var dtRender = currentTime - lastRenderTime;
+		
+		// If not enough time has passed to render the next frame, skip drawing!
+		if (dtRender < renderInterval) {
+			return;
+		}
+		
+		// Adjust the lastRenderTime by the remainder to prevent micro-stutters over time
+		lastRenderTime = currentTime - (dtRender % renderInterval);
+	} else {
+		// If uncapped (0) or classic, just track the time naturally
+		lastRenderTime = currentTime;
+	}
+
+	// 4. Render the Frame
+	render(); 
+}
+
+
+// Kickstart engine at bottom of file or in init()
+if (!engineStarted) {
+	engineStarted = true;
+	requestAnimationFrame(mainEngineLoop);
+}
+
+function doGameTick() {
+	savePreviousStates();
 	if (canw != window.innerWidth || tcanh != window.innerHeight) {
 		canw = window.innerWidth;
 		canh = window.innerHeight;
@@ -11790,32 +11956,10 @@ function gameloop() {
 			rd.drawImage(rosize, ((canw * 0.5) - (rwd * 0.5)), (canh + (rhd * 0.4)), rwd, rhd);
 		}
 	}
-	var date = new Date();
-	var ctime = date.getTime();
-	if (ltime == -1) {
-		totime = 20;
-	} else {
-		totime += (ctime - ltime);
-	}
-	ltime = ctime;
-	nfr++;
-	if (nfr == 5) {
-		if (totime > (250 * m)) {
-			actat--;
-			if (actat < 5) {
-				actat = 5;
-			}
-		} else {
-			actat += 2;
-		}
-		totime = 0;
-		nfr = 0;
-	}
 	if (frgm >= m) {
 		frgm -= 1;
 	}
 	frgm += m;
-	setTimeout("gameloop()", actat);
 }
 var interaud = null;
 var interaudstat = 0;
@@ -12528,7 +12672,7 @@ function pausedgame() {
 		}
 		gameplayStart();
 		fase = 7;
-		requestAnimationFrame(render);
+		
 	}
 	on = 0;
 	if (onhip == 1) {
@@ -12615,7 +12759,7 @@ function pausedgame() {
 			}
 			gameplayStart();
 			fase = 7;
-			requestAnimationFrame(render);
+			
 			noten = 0;
 		}
 		if (onhip == 1) {
@@ -12835,7 +12979,7 @@ function drawmain() {
 			var fogdist = 10700;
 			setworld(snap, fogc, lvx, lvy, lvz, fogdist);
 			fase = 2;
-			requestAnimationFrame(render);
+			
 		}
 	}
 	if (!flwg) {
@@ -14159,7 +14303,7 @@ function afteradend() {
 		adv = Math.floor(90 * Math.random());
 		vxz = Math.floor(360 * Math.random());
 		hrewindhreplay();
-		requestAnimationFrame(render);
+		
 	} else {
 		iniend();
 		fase = 12;
@@ -14673,7 +14817,7 @@ function endgame() {
 				fredo = 76;
 				colorbgstforend();
 				updateframe = true;
-				requestAnimationFrame(render);
+				
 				carmy = -20;
 				carup = 0;
 				carms = 100;
@@ -14934,7 +15078,7 @@ function unlockrewcar() { //this function shouldnt ever be triggered...
 function failedrewcar() {
 	playMainMenuMusic();
 	fase = 2;
-	requestAnimationFrame(render);
+	
 }
 var alipha = 0;
 var bgsload = null;
@@ -14999,10 +15143,10 @@ function stageloading() {
 				ondud = 0;
 			}
 			fase = 4;
-			requestAnimationFrame(render);
+			
 		} else {
 			gotGamepads();
-			requestAnimationFrame(render);
+			
 			gameplayStart();
 			pauseMainMenuMusic();
 			playStageMusic();
@@ -15364,12 +15508,12 @@ function tipunlocked() {
 	ontip = true;
 	dudo = 0;
 	fase = 4;
-	requestAnimationFrame(render);
+	
 }
 function tipunlockedfailed() {
 	playMainMenuMusic();
 	fase = 4;
-	requestAnimationFrame(render);
+	
 }
 function spPolygon(stx, sty, xd, yd, fm, to, enx, eny) {
 	rd.beginPath();
@@ -16425,7 +16569,7 @@ function rewindreplay() {
 			}
 		}
 	}
-	requestAnimationFrame(render);
+	
 	fase = 8;
 }
 function replay() {
@@ -16846,45 +16990,32 @@ function buildCollisionWireframe(rad) {
 }
 
 function drawDebugCollisions(rad) {
-	if (!window.DEBUG_COLLISIONS || !rad || !rad.col_vbuf || !programInfo[6]) return;
+	if (!window.DEBUG_COLLISIONS || !rad || !rad.col_vbuf || !programInfo[6] || !rad.col_mvMat) return;
 	
-	// Unbind element array buffer just in case
 	gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-	
 	gl.useProgram(programInfo[6].program);
-	
 	gl.bindBuffer(gl.ARRAY_BUFFER, rad.col_vbuf);
 	gl.vertexAttribPointer(programInfo[6].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
 	gl.enableVertexAttribArray(programInfo[6].attribLocations.vertexPosition);
-	
 	gl.bindBuffer(gl.ARRAY_BUFFER, rad.col_cbuf);
 	gl.vertexAttribPointer(programInfo[6].attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
 	gl.enableVertexAttribArray(programInfo[6].attribLocations.vertexColor);
-	
 	gl.bindBuffer(gl.ARRAY_BUFFER, rad.col_nbuf);
 	gl.vertexAttribPointer(programInfo[6].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
 	gl.enableVertexAttribArray(programInfo[6].attribLocations.vertexNormal);
 	
 	gl.uniformMatrix4fv(programInfo[6].uniformLocations.projectionMatrix, false, cmat);
-	gl.uniformMatrix4fv(programInfo[6].uniformLocations.modelViewMatrix, false, rad.mat);
+	gl.uniformMatrix4fv(programInfo[6].uniformLocations.modelViewMatrix, false, rad.col_mvMat); // USE SAFELY COMPUTED MATRIX
 	
-	if (programInfo[6].uniformLocations.uCamPos) {
-		gl.uniform3f(programInfo[6].uniformLocations.uCamPos, camx, camy, camz);
-	}
-	if (programInfo[6].uniformLocations.uCarPos && typeof car !== 'undefined' && car[0]) {
-		gl.uniform3f(programInfo[6].uniformLocations.uCarPos, car[0].x, car[0].y, car[0].z);
-	} else {
-		gl.uniform3f(programInfo[6].uniformLocations.uCarPos, camx, camy, camz);
-	}
+	if (programInfo[6].uniformLocations.uCamPos) gl.uniform3f(programInfo[6].uniformLocations.uCamPos, camx, camy, camz);
+	if (programInfo[6].uniformLocations.uCarPos && typeof car !== 'undefined' && car[0]) gl.uniform3f(programInfo[6].uniformLocations.uCarPos, car[0].x, car[0].y, car[0].z);
+	else gl.uniform3f(programInfo[6].uniformLocations.uCarPos, camx, camy, camz);
 	
-	// Disable depth testing so the lines draw OVER models for easier debugging
 	gl.disable(gl.DEPTH_TEST);
 	gl.lineWidth(2.0);
 	gl.drawArrays(gl.LINES, 0, rad.col_edgeCount);
 	gl.enable(gl.DEPTH_TEST);
 }
-
-
 
 
 
@@ -17174,7 +17305,7 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 		for (var j = 0; j < 12; j++) pts.push([px[j], py[j], pz[j]]);
 		pushCloudPoly(pts, clds[0], clds[1], clds[2]);
 	}
-
+	proceduralClouds.disableFog = true;
 	applyBuffers(proceduralClouds, cVerts, cColors, cIndices, cVertCount);
 
 	// ========================================================
@@ -17262,74 +17393,92 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 			mIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx, baseIdx+2, baseIdx+3);
 		}
 	}
-
+	proceduralMountains.disableFog = true;
 	applyBuffers(proceduralMountains, mVerts, mColors, mIndices, mVertCount);
 
 	// ========================================================
-	// 4. GENERATE SKYDOM (The Wedge Illusion)
+	// 4. GENERATE SKYDOM (Tweakable Mirrored V-Shape)
 	// ========================================================
 	var sVerts = [], sColors = [], sIndices = [], sVertCount = 0;
 
-	function pushSkyWedge(y1, z1, y2, z2, c1, c2) {
+	function pushSkyBand(y1, z1, y2, z2, c1, c2) {
 		var baseIdx = sVertCount;
-		var e1 = Math.abs(z1) + 0.001; 
-		var e2 = Math.abs(z2) + 0.001;
+		var W = 200000.0; // Incredibly wide to hide horizontal edges
 		
-		sVerts.push(-e1*0.1, y1*-0.1, z1*0.1,  e1*0.1, y1*-0.1, z1*0.1,  -e2*0.1, y2*-0.1, z2*0.1,  e2*0.1, y2*-0.1, z2*0.1);
+		sVerts.push(
+			-W * 0.1, y1 * 0.1, -z1 * 0.1,  
+			 W * 0.1, y1 * 0.1, -z1 * 0.1,  
+			-W * 0.1, y2 * 0.1, -z2 * 0.1,  
+			 W * 0.1, y2 * 0.1, -z2 * 0.1
+		);
 		sColors.push(c1.r, c1.g, c1.b, 1.0, c1.r, c1.g, c1.b, 1.0, c2.r, c2.g, c2.b, 1.0, c2.r, c2.g, c2.b, 1.0);
-		sIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx+1, baseIdx+3, baseIdx+2);
-		sVertCount += 4; baseIdx += 4;
-		
-		sVerts.push(e1*0.1, y1*-0.1, -z1*0.1, -e1*0.1, y1*-0.1, -z1*0.1,  e2*0.1, y2*-0.1, -z2*0.1, -e2*0.1, y2*-0.1, -z2*0.1);
-		sColors.push(c1.r, c1.g, c1.b, 1.0, c1.r, c1.g, c1.b, 1.0, c2.r, c2.g, c2.b, 1.0, c2.r, c2.g, c2.b, 1.0);
-		sIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx+1, baseIdx+3, baseIdx+2);
-		sVertCount += 4; baseIdx += 4;
-		
-		sVerts.push(z1*0.1, y1*-0.1, e1*0.1,  z1*0.1, y1*-0.1, -e1*0.1,  z2*0.1, y2*-0.1, e2*0.1,  z2*0.1, y2*-0.1, -e2*0.1);
-		sColors.push(c1.r, c1.g, c1.b, 1.0, c1.r, c1.g, c1.b, 1.0, c2.r, c2.g, c2.b, 1.0, c2.r, c2.g, c2.b, 1.0);
-		sIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx+1, baseIdx+3, baseIdx+2);
-		sVertCount += 4; baseIdx += 4;
-		
-		sVerts.push(-z1*0.1, y1*-0.1, -e1*0.1, -z1*0.1, y1*-0.1, e1*0.1, -z2*0.1, y2*-0.1, -e2*0.1, -z2*0.1, y2*-0.1, e2*0.1);
-		sColors.push(c1.r, c1.g, c1.b, 1.0, c1.r, c1.g, c1.b, 1.0, c2.r, c2.g, c2.b, 1.0, c2.r, c2.g, c2.b, 1.0);
-		sIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx+1, baseIdx+3, baseIdx+2);
-		sVertCount += 4; baseIdx += 4;
+		sIndices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx + 1, baseIdx + 3, baseIdx + 2);
+		sVertCount += 4;
 	}
 
 	var skyC = snapColor(skyc), fogC = snapColor(fogc), grndC = snappedGrnd;
-	var layers = [];
+
+	// --- TWEAKABLE VARIABLES ---
+	// Feel free to replace fogSpread and fogBands with your dynamic density()/distfog math!
 	
-	layers.push({ y: -100.0, z: 0.0, r: skyC[0]/255, g: skyC[1]/255, b: skyC[2]/255 });
+	var fogSpread = 0.10;	   // Height percentage (0.0 to 1.0) where fog transitions into Sky/Ground
+	var fogBands = 8;		   // Number of granular polygon steps for the abrupt fog transition
+	
+	var skyDarkenRatio = -0.15;   // Percentage of original brightness at the very top of the sky
+	var skyBands = 12;		  // Number of granular polygon steps for the soft upper sky gradient
 
-	for (var i = 19; i >= 1; --i) {
-		var tCol = [skyC[0], skyC[1], skyC[2]];
-		for(var j=0; j<i; j++) { tCol[0]*=0.991; tCol[1]*=0.991; tCol[2]*=0.998; }
-		var oY = -300 - 700 - i * 70, oZ = 3500;
-		var dist = Math.sqrt(oY*oY + oZ*oZ);
-		layers.push({ y: (oY/dist)*100, z: (oZ/dist)*100, r: tCol[0]/255, g: tCol[1]/255, b: tCol[2]/255 });
+	var R = 8000.0;			 // Depth (distance to the horizon fold)
+	var H = 8000.0;			 // Height (distance to the top/bottom openings)
+
+	// Helper to blend colors smoothly
+	function lerpColor(c1, c2, t) {
+		return [
+			c1[0] + (c2[0] - c1[0]) * t,
+			c1[1] + (c2[1] - c1[1]) * t,
+			c1[2] + (c2[2] - c1[2]) * t
+		];
 	}
 
-	var oY = -1000, oZ = 3500;
-	var dist = Math.sqrt(oY*oY + oZ*oZ);
-	layers.push({ y: (oY/dist)*100, z: (oZ/dist)*100, r: skyC[0]/255, g: skyC[1]/255, b: skyC[2]/255 });
+	var layers = [];
+	var darkSkyC = [skyC[0] * skyDarkenRatio, skyC[1] * skyDarkenRatio, skyC[2] * skyDarkenRatio];
 
-	var col = [skyC[0], skyC[1], skyC[2]];
-	for (var i = 0; i < 16; ++i) {
-		col[0] = (7 * col[0] + fogC[0]) / 8; col[1] = (7 * col[1] + fogC[1]) / 8; col[2] = (7 * col[2] + fogC[2]) / 8;
-		var oY2 = -300, oZ2 = (fogdist / 2.5) * (i + 1);
-		var dist2 = Math.sqrt(oY2*oY2 + oZ2*oZ2);
-		layers.push({ y: (oY2/dist2)*100, z: (oZ2/dist2)*100, r: col[0]/255, g: col[1]/255, b: col[2]/255 });
+	// 1. TOP SKY (Darkened -> Pure Sky)
+	// Starts at 1.0 (Zenith) and slides down to the fog boundary
+	for (var i = 0; i <= skyBands; i++) {
+		var progress = i / skyBands; // 0.0 = Zenith, 1.0 = Start of Fog
+		var t = 1.0 - progress * (1.0 - fogSpread); 
+		var c = lerpColor(darkSkyC, skyC, progress);
+		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
 	}
 
-	layers.push({ y: 0.0, z: 100.0, r: fogC[0]/255, g: fogC[1]/255, b: fogC[2]/255 });
-	layers.push({ y: 5.0, z: 99.8, r: fogC[0]/255, g: fogC[1]/255, b: fogC[2]/255 });
-	layers.push({ y: 15.0, z: 98.8, r: grndC[0]/255, g: grndC[1]/255, b: grndC[2]/255 });
-	layers.push({ y: 100.0, z: 0.0, r: grndC[0]/255, g: grndC[1]/255, b: grndC[2]/255 });
+	// 2. UPPER FOG (Pure Sky -> Fog)
+	// Starts at the fog boundary and slides down to 0.0 (Horizon)
+	for (var i = 1; i <= fogBands; i++) {
+		var progress = i / fogBands; // 0.0 = Start of Fog, 1.0 = Horizon
+		var t = fogSpread * (1.0 - progress);
+		var c = lerpColor(skyC, fogC, progress);
+		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
+	}
 
+	// 3. LOWER FOG (Fog -> Pure Ground)
+	// Starts at 0.0 (Horizon) and slides down into the ground. (Perfect Mirror of Upper Fog!)
+	for (var i = 1; i <= fogBands; i++) {/*
+		var progress = i / fogBands; // 0.0 = Horizon, 1.0 = End of Fog
+		var t = -fogSpread * progress;
+		var c = lerpColor(fogC, grndC, progress);
+		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
+	*/}
+
+	// 4. SOLID GROUND (Pure Ground down to Nadir)
+	// Drops straight to the bottom of the V-Shape (-1.0)
+	layers.push({ y: -H, z: 0.0, r: grndC[0]/255, g: grndC[1]/255, b: grndC[2]/255 });
+
+	// Build the Geometry
 	for (var i = 0; i < layers.length - 1; ++i) {
-		pushSkyWedge(layers[i].y, layers[i].z, layers[i+1].y, layers[i+1].z, layers[i], layers[i+1]);
+		pushSkyBand(layers[i].y, layers[i].z, layers[i+1].y, layers[i+1].z, layers[i], layers[i+1]);
 	}
 
+	skydom.disableFog = true; 
 	applyBuffers(skydom, sVerts, sColors, sIndices, sVertCount);
 }
 
