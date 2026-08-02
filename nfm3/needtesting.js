@@ -4,6 +4,7 @@ if (!isSecureContext) alert("NFM will not run outside of secure context!!! pleas
 rel1 = 0;
 rel2 = 0;
 stageLightsOn = false;
+NFMWheels = false;
 /* ----- original modded files by Kirtide, HD textures by Maxine, further maddened by dmack6464 ----- */
 
 // --- COLLISION DEBUG TOGGLE ---
@@ -5647,6 +5648,13 @@ function render() {
 	if (!window.smoothRendering) alpha = 1.0; 
 	if (alpha > 1.0) alpha = 1.0;
 	if (alpha < 0.0) alpha = 0.0;
+	
+	// --- FIX: Force FOV back to normal in menus! ---
+	var targetFov = window.globalFieldOfView || ((FOV * Math.PI) / 180);
+	if (typeof fase !== 'undefined' && (fase < 7 || fase > 10)) {
+		targetFov = (FOV * Math.PI) / 180;
+		window.globalFieldOfView = targetFov;
+	}
 
 	var bCamX = camx, bCamY = camy, bCamZ = camz;
 	
@@ -5846,7 +5854,19 @@ function render() {
 		gl.clearDepth(1.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		gl.disable(gl.DEPTH_TEST);
-		drawparticle(bgst);
+		
+		// Perfectly lock the stage select background to the interpolated camera!
+		var bMat = mat4.create();
+		mat4.rotate(bMat, bMat, (iCamXZ * (Math.PI / 180)), [0, -1, 0]);
+		mat4.rotate(bMat, bMat, (iCamZY * (Math.PI / 180)), [-1, 0, 0]);
+		bMat[0] *= (aspect * 0.5625);
+		bMat[1] *= (aspect * 0.5625);
+		bMat[2] *= (aspect * 0.5625);
+		var bx = (camx - (106 * bMat[8]));
+		var by = (camy - (106 * bMat[9]));
+		var bz = (camz - (106 * bMat[10]));
+		drawparticle(bgst, bx, by, bz, bMat);
+
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
 		if (!flkun) {
@@ -5884,7 +5904,16 @@ function render() {
 		gl.clearDepth(1.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		gl.disable(gl.DEPTH_TEST);
-		drawparticle(bgst);
+		
+		// Perfectly lock the unlock screen background to the interpolated camera!
+		var bMat = mat4.create();
+		mat4.rotate(bMat, bMat, (iCamXZ * (Math.PI / 180)), [0, -1, 0]);
+		mat4.rotate(bMat, bMat, (iCamZY * (Math.PI / 180)), [-1, 0, 0]);
+		bMat[0] *= (aspect * 0.5625);
+		bMat[1] *= (aspect * 0.5625);
+		bMat[2] *= (aspect * 0.5625);
+		drawparticle(bgst, 0, 0, -90, bMat);
+
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
 
@@ -10146,8 +10175,11 @@ function drive() {
 		}
 		var nzy = 0, nzyr = 0, nxy = 0, nxyr = 0;
 
-		// --- Surface orientation from plane fitting (Smoothed & Fixed Implementation) ---
+		// --- Hybrid Surface Physics Engine ---
 		if (scy[c][0] != scy[c][1] || scy[c][0] != scy[c][2] || scy[c][0] != scy[c][3]) {
+			
+			// --- 1. PRE-CALCULATE TERRAIN NORMAL ---
+			// We use the modern plane-fitting math to scan the steepness of the ground beneath the wheels.
 			
 			// Triangle 1 Normal
 			var v1x = kx[1] - kx[0], v1y = ky[1] - ky[0], v1z = kz[1] - kz[0];
@@ -10181,93 +10213,117 @@ function drive() {
 				tnx = -tnx; tny = -tny; tnz = -tnz;
 			}
 
-			var targetPzy = pzy[c];
-			var targetPxy = pxy[c];
-			var validTarget = false;
+			// --- 2. DYNAMIC PHYSICS SWAP ---
+			// If the ground is roughly flat (>0.97 threshold, meaning <14 degrees slope), 
+			// use the Modern smoothed physics to cure the Bad Landing Glitch.
+			// If it is steeper (a ramp), swap seamlessly to NFM 2004 physics to prevent phasing!
+			var NFMWheels = (Math.abs(tny) > 0.97);
 
-			// Fallback: When terrainNormal.Y approaches 0, plane fit degrades. Use raw height diffs.
-			if (Math.abs(tny) < 0.05) {
-				var avgFrontY = (ky[0] + ky[1]) * 0.5;
-				var avgRearY  = (ky[2] + ky[3]) * 0.5;
-				var avgLeftY  = (ky[0] + ky[2]) * 0.5;
-				var avgRightY = (ky[1] + ky[3]) * 0.5;
+			if (NFMWheels) {
+				// --- MODERN C# PLANE-FITTING (Flat Ground) ---
+				var targetPzy = pzy[c];
+				var targetPxy = pxy[c];
+				var validTarget = false;
 
-				var wheelbase = Math.abs(car[c].keyz[0] - car[c].keyz[2]);
-				var trackWidth = Math.abs(car[c].keyx[0] - car[c].keyx[1]);
+				if (Math.abs(tny) < 0.05) {
+					var avgFrontY = (ky[0] + ky[1]) * 0.5;
+					var avgRearY  = (ky[2] + ky[3]) * 0.5;
+					var avgLeftY  = (ky[0] + ky[2]) * 0.5;
+					var avgRightY = (ky[1] + ky[3]) * 0.5;
 
-				// FIXED THE BUG HERE: Reversed the subtractions because NFM's Y-axis is inverted!
-				// Positive PZY means pitching UP. avgRearY - avgFrontY is positive when pitched up.
-				targetPzy = Math.atan2(avgRearY - avgFrontY, wheelbase) * (180 / Math.PI);
-				
-				// Positive PXY means left side is UP. avgRightY - avgLeftY is positive when left side is up.
-				targetPxy = Math.atan2(avgRightY - avgLeftY, trackWidth) * (180 / Math.PI);
-				validTarget = true;
-			} else {
-				// Undo yaw before decomposing into Pitch/Roll
-				var cosXz = mcos(car[c].xz);
-				var sinXz = msin(car[c].xz);
-				var sinP = tnx * cosXz + tnz * sinXz;
-				var cosP_sinZ = tnx * sinXz - tnz * cosXz;
-				var cosP_cosZ = -tny;
+					var wheelbase = Math.abs(car[c].keyz[0] - car[c].keyz[2]);
+					var trackWidth = Math.abs(car[c].keyx[0] - car[c].keyx[1]);
 
-				var absCosP = Math.sqrt(cosP_cosZ * cosP_cosZ + cosP_sinZ * cosP_sinZ);
-
-				// Guard against dividing by near-zero (avoiding noise near 90deg roll)
-				if (absCosP > 0.05) {
-					var rawXy = Math.abs(pxy[c]);
-					while (rawXy > 270) rawXy -= 360;
-					rawXy = Math.abs(rawXy);
-
-					var rawZy = Math.abs(pzy[c]);
-					while (rawZy > 270) rawZy -= 360;
-					rawZy = Math.abs(rawZy);
-
-					var cosP;
-					if (cosP_cosZ >= 0) {
-						cosP = (rawXy > 90 && rawZy > 90) ? -absCosP : absCosP;
-					} else if (rawZy > 90) {
-						cosP = absCosP;
-					} else if (rawXy > 90) {
-						cosP = -absCosP;
-					} else {
-						cosP = absCosP;
-					}
-
-					var sinZ = cosP_sinZ / cosP;
-					var cosZ = cosP_cosZ / cosP;
-
-					if (Math.abs(cosP_cosZ) > 0.05) {
-						targetPzy = Math.atan2(sinZ, cosZ) * (180 / Math.PI);
-					}
-					targetPxy = Math.atan2(sinP, cosP) * (180 / Math.PI);
+					targetPzy = Math.atan2(avgRearY - avgFrontY, wheelbase) * (180 / Math.PI);
+					targetPxy = Math.atan2(avgRightY - avgLeftY, trackWidth) * (180 / Math.PI);
 					validTarget = true;
+				} else {
+					var cosXz = mcos(car[c].xz);
+					var sinXz = msin(car[c].xz);
+					var sinP = tnx * cosXz + tnz * sinXz;
+					var cosP_sinZ = tnx * sinXz - tnz * cosXz;
+					var cosP_cosZ = -tny;
+
+					var absCosP = Math.sqrt(cosP_cosZ * cosP_cosZ + cosP_sinZ * cosP_sinZ);
+
+					if (absCosP > 0.05) {
+						var rawXy = Math.abs(pxy[c]);
+						while (rawXy > 270) rawXy -= 360;
+						rawXy = Math.abs(rawXy);
+
+						var rawZy = Math.abs(pzy[c]);
+						while (rawZy > 270) rawZy -= 360;
+						rawZy = Math.abs(rawZy);
+
+						var cosP;
+						if (cosP_cosZ >= 0) {
+							cosP = (rawXy > 90 && rawZy > 90) ? -absCosP : absCosP;
+						} else if (rawZy > 90) {
+							cosP = absCosP;
+						} else if (rawXy > 90) {
+							cosP = -absCosP;
+						} else {
+							cosP = absCosP;
+						}
+
+						var sinZ = cosP_sinZ / cosP;
+						var cosZ = cosP_cosZ / cosP;
+
+						if (Math.abs(cosP_cosZ) > 0.05) {
+							targetPzy = Math.atan2(sinZ, cosZ) * (180 / Math.PI);
+						}
+						targetPxy = Math.atan2(sinP, cosP) * (180 / Math.PI);
+						validTarget = true;
+					}
 				}
-			}
 
-			if (validTarget) {
-				// Unwrap relative to current physics angles to prevent 360-degree spins
-				while (targetPxy - pxy[c] > 180) targetPxy -= 360;
-				while (targetPxy - pxy[c] < -180) targetPxy += 360;
-				while (targetPzy - pzy[c] > 180) targetPzy -= 360;
-				while (targetPzy - pzy[c] < -180) targetPzy += 360;
+				if (validTarget) {
+					while (targetPxy - pxy[c] > 180) targetPxy -= 360;
+					while (targetPxy - pxy[c] < -180) targetPxy += 360;
+					while (targetPzy - pzy[c] > 180) targetPzy -= 360;
+					while (targetPzy - pzy[c] < -180) targetPzy += 360;
 
-				var diffPzy = targetPzy - pzy[c];
-				var diffPxy = targetPxy - pxy[c];
+					var diffPzy = targetPzy - pzy[c];
+					var diffPxy = targetPxy - pxy[c];
 
-				// REDUCED from 15.0/0.75 -> 8.0/0.35
-				// This prevents the violent pitching that jolts the wheels out of the 
-				// collision boundary (phasing) or lifts them off the ramp (awkward takeoff)
-				var maxSnap = 15.0 * m; 
-				if (diffPzy > maxSnap) diffPzy = maxSnap;
-				if (diffPzy < -maxSnap) diffPzy = -maxSnap;
-				if (diffPxy > maxSnap) diffPxy = maxSnap;
-				if (diffPxy < -maxSnap) diffPxy = -maxSnap;
+					var maxSnap = 15.0 * m; 
+					if (diffPzy > maxSnap) diffPzy = maxSnap;
+					if (diffPzy < -maxSnap) diffPzy = -maxSnap;
+					if (diffPxy > maxSnap) diffPxy = maxSnap;
+					if (diffPxy < -maxSnap) diffPxy = -maxSnap;
 
-				var smoothRate = 0.35 * m; 
-				if (smoothRate > 1.0) smoothRate = 1.0;
+					var smoothRate = 0.65 * m; 
+					if (smoothRate > 1.0) smoothRate = 1.0;
 
-				pzy[c] += diffPzy * smoothRate;
-				pxy[c] += diffPxy * smoothRate;
+					// Modern physics directly applies rotation here
+					pzy[c] += diffPzy * smoothRate;
+					pxy[c] += diffPxy * smoothRate;
+				}
+			} else {
+				// --- ORIGINAL 2004 PHYSICS (Ramps) ---
+				var mlt = 0;
+				var arch = 0;
+				
+				if (scy[c][2] != scy[c][0]) {
+					if (scy[c][2] < scy[c][0]) { mlt = -1; } else { mlt = 1; }
+					arch = (Math.sqrt(((kz[0] - kz[2]) * (kz[0] - kz[2]) + (ky[0] - ky[2]) * (ky[0] - ky[2]) + (kx[0] - kx[2]) * (kx[0] - kx[2]))) / (Math.abs(car[c].keyz[0]) + Math.abs(car[c].keyz[2])));
+					if (arch >= 0.9998) { nzy = mlt; } else { nzy = ((Math.acos(arch) / 0.017453292519943295) * mlt); }
+				}
+				if (scy[c][3] != scy[c][1]) {
+					if (scy[c][3] < scy[c][1]) { mlt = -1; } else { mlt = 1; }
+					arch = (Math.sqrt(((kz[1] - kz[3]) * (kz[1] - kz[3]) + (ky[1] - ky[3]) * (ky[1] - ky[3]) + (kx[1] - kx[3]) * (kx[1] - kx[3]))) / (Math.abs(car[c].keyz[1]) + Math.abs(car[c].keyz[3])));
+					if (arch >= 0.9998) { nzyr = mlt; } else { nzyr = ((Math.acos(arch) / 0.017453292519943295) * mlt); }
+				}
+				if (scy[c][1] != scy[c][0]) {
+					if (scy[c][1] < scy[c][0]) { mlt = -1; } else { mlt = 1; }
+					arch = (Math.sqrt(((kz[0] - kz[1]) * (kz[0] - kz[1]) + (ky[0] - ky[1]) * (ky[0] - ky[1]) + (kx[0] - kx[1]) * (kx[0] - kx[1]))) / (Math.abs(car[c].keyx[0]) + Math.abs(car[c].keyx[1])));
+					if (arch >= 0.9998) { nxy = mlt; } else { nxy = ((Math.acos(arch) / 0.017453292519943295) * mlt); }
+				}
+				if (scy[c][3] != scy[c][2]) {
+					if (scy[c][3] < scy[c][2]) { mlt = -1; } else { mlt = 1; }
+					arch = (Math.sqrt(((kz[2] - kz[3]) * (kz[2] - kz[3]) + (ky[2] - ky[3]) * (ky[2] - ky[3]) + (kx[2] - kx[3]) * (kx[2] - kx[3]))) / (Math.abs(car[c].keyx[2]) + Math.abs(car[c].keyx[3])));
+					if (arch >= 0.9998) { nxyr = mlt; } else { nxyr = ((Math.acos(arch) / 0.017453292519943295) * mlt); }
+				}
 			}
 		}
 		if (spinlocate) {
@@ -11589,8 +11645,9 @@ function lerpMat(a, b, t) {
 }
 
 
+
 function savePreviousStates() {
-	// 1. Always save the camera, as it is used in almost every phase (menus included)
+	// 1. Always save the camera
 	pcamx = camx; pcamy = camy; pcamz = camz;
 	pcamxz = camxz; pcamzy = camzy;
 	pFieldOfView = window.globalFieldOfView;
@@ -11598,29 +11655,32 @@ function savePreviousStates() {
 	// 2. Skip caching heavy 3D game objects during Loading (0) or Main Menu (1)
 	if (typeof fase === 'undefined' || fase < 2) return;
 
-	// 3. Safely cache Cars and Wheels
-	if (typeof ncars !== 'undefined' && typeof car !== 'undefined' && typeof whl !== 'undefined') {
+	// 3. Safely cache Racing Cars
+	if (typeof ncars !== 'undefined' && typeof car !== 'undefined') {
 		for (var c = 0; c < ncars; c++) {
 			if (!car[c]) continue;
 			
 			car[c].px = car[c].x; car[c].py = car[c].y; car[c].pz = car[c].z;
 			if (!car[c].pmat) car[c].pmat = new Float32Array(16);
 			if (car[c].mat) for (var i=0; i<16; i++) car[c].pmat[i] = car[c].mat[i];
-			
-			// Ensure the car has a type and the wheels array exists for it
-			if (car[c].typ !== undefined && whl[car[c].typ]) {
-				for (var w=0; w<4; w++) {
-					var wh = whl[car[c].typ][w];
-					if (!wh) continue;
-					wh.px = wh.x; wh.py = wh.y; wh.pz = wh.z;
-					if (!wh.pmat) wh.pmat = new Float32Array(16);
-					if (wh.mat) for (var i=0; i<16; i++) wh.pmat[i] = wh.mat[i];
-				}
+		}
+	}
+	
+	// 4. Cache ALL 19 Sets of Wheels (Crucial for Car Select!)
+	if (typeof whl !== 'undefined') {
+		for (var i = 0; i < 19; i++) {
+			if (!whl[i]) continue;
+			for (var w = 0; w < 4; w++) {
+				var wh = whl[i][w];
+				if (!wh) continue;
+				wh.px = wh.x; wh.py = wh.y; wh.pz = wh.z;
+				if (!wh.pmat) wh.pmat = new Float32Array(16);
+				if (wh.mat) for (var j=0; j<16; j++) wh.pmat[j] = wh.mat[j];
 			}
 		}
 	}
 	
-	// 4. Safely cache Car Models and Shadows
+	// 5. Safely cache Car Models and Shadows
 	if (typeof carobj !== 'undefined' && typeof shad !== 'undefined') {
 		for (var i = 0; i < 19; i++) {
 			var objs = [carobj[i], shad[i]];
@@ -11634,7 +11694,7 @@ function savePreviousStates() {
 		}
 	}
 	
-	// 5. Safely cache Track Pieces
+	// 6. Safely cache Track Pieces
 	if (typeof nb !== 'undefined' && typeof obo !== 'undefined') {
 		for (var i = 0; i < nb; i++) {
 			if (!obo[i]) continue;
@@ -11643,7 +11703,18 @@ function savePreviousStates() {
 			if (obo[i].mat) for (var j=0; j<16; j++) obo[i].pmat[j] = obo[i].mat[j];
 		}
 	}
+
+	// 7. Cache Menu Smoke (Smooths out Car Select!)
+	if (typeof smoke !== 'undefined') {
+		for (var i = 0; i < smoke.length; i++) {
+			if (!smoke[i]) continue;
+			smoke[i].px = smoke[i].x; smoke[i].py = smoke[i].y; smoke[i].pz = smoke[i].z;
+			if (!smoke[i].pmat) smoke[i].pmat = new Float32Array(16);
+			if (smoke[i].mat) for(var j=0; j<16; j++) smoke[i].pmat[j] = smoke[i].mat[j];
+		}
+	}
 }
+
 
 
 // --- MASTER LOOP & LERP UTILITIES ---
