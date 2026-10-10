@@ -5,6 +5,8 @@ rel1 = 0;
 rel2 = 0;
 stageLightsOn = false;
 NFMWheels = false;
+// Controls wheel roundness! NFM Classic = 6, Smooth = 16
+window.WHEEL_SEGMENTS = 10;
 /* ----- original modded files by Kirtide, HD textures by Maxine, further maddened by dmack6464 ----- */
 
 // --- COLLISION DEBUG TOGGLE ---
@@ -85,6 +87,19 @@ function pulseSky() { //does nothing right now, potential experiements in the fu
 	stageSky = [0,0,0];
 	skytexture(stageSky, stageFog, stageClouds, stageCloudsType);
 }
+
+window.updateEnvironment = function(args) {
+	window.changeStageColors(
+		args.ground, 
+		args.polys, 
+		args.sky, 
+		args.fog, 
+		args.clouds, 
+		args.snap, 
+		args.lightDir, 
+		args.fogDist
+	);
+}; //example: window.updateEnvironment({ fog: [100, 100, 100], fogDist: 4000 });
 
 function seamlessLoad() {
 	if (newCarDown) {
@@ -328,6 +343,7 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 			var webgl_verts = [];
 			var webgl_norms = [];
 			var webgl_colors = [];
+			var webgl_dark_colors = [];
 			var webgl_indices = [];
 			var webgl_edgeIndices = [];
 			var webgl_edgeColors = [];
@@ -337,6 +353,13 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 			var has_group_normal = false;
 			var webgl_vert_count = 0;
 			var hasStonecold = false;
+			var hasRoadProperty = false;
+			
+			// --- NEW VARIABLES FOR LEGACY WHEELS ---
+			rad.legacyWheels = [];
+			var currentRims = { r: 150, g: 150, b: 150, size: 30, depth: 10 };
+			var currentGwgr = 40;
+			var f = 1.0, f1 = 1.0, scaleX = 1.0, scaleY = 1.0, scaleZ = 1.0;
 			
 			rad.bx = 0; rad.by = 0; rad.bz = 0; rad.colrad = 0; rad.alpha = 0;
 
@@ -344,10 +367,13 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 				var line = lines[i].trim();
 				if (!line || line.startsWith("#")) continue;
 
-				if (line === "stonecold" || line === "newstone") {
+				if (line === "road()") {
+					hasRoadProperty = true;
+				}  else if (line === "stonecold" || line === "newstone") {
 					hasStonecold = true;
-				} 
-				else if (line.startsWith("dam()")) {
+				}  else if (line.startsWith("strictshader()")) {
+					rad.strictShader = true;
+				} else if (line.startsWith("dam()")) {
 					rad.dam = 3;
 				} else if (line.startsWith("skid(")) {
 					rad.skid = parseInt(line.substring(5, line.indexOf(")")));
@@ -418,6 +444,26 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 						webgl_norms.push(nx, ny, nz);
 						webgl_colors.push(...current_color);
 						
+						// --- NEW EXPLICIT LIGHT CHECK ---
+						// Use the exact out_type tag from the file instead of guessing from normal lengths!
+						var isLight = (out_type === 3 || out_type === 4);
+						//var darkenFactor = hasStonecold ? 0.95 : (isLight ? 0.75 : 0.0);
+						
+						var darkenFactor = 0.0;
+						if (isStagePiece) {
+							//darkenFactor = hasStonecold ? 1.0 : 0.95;
+							if ((hasStonecold) && (hasRoadProperty)) {
+								darkenFactor = 0.80;
+							} else {
+								//darkenFactor = 1.0;
+								darkenFactor = 0.80; //this is until all models are updated with road()
+							}
+						}
+						if (isLight) darkenFactor = 0.9;
+						if ((isLight) && (!isStagePiece)) darkenFactor = 0.60;
+						
+						webgl_dark_colors.push(current_color[0] * darkenFactor, current_color[1] * darkenFactor, current_color[2] * darkenFactor, 1.0);
+						
 						var tcrad = Math.sqrt(vx * vx + vy * vy + vz * vz);
 						if (tcrad > rad.colrad) rad.colrad = tcrad;
 						if (Math.abs(vx) > rad.bx) rad.bx = Math.abs(vx);
@@ -444,6 +490,41 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 						if (mask & 2) webgl_edgeIndices.push(w1, w2);
 						if (mask & 4) webgl_edgeIndices.push(w2, w0);
 					}
+				} else if (line.startsWith("div(")) {
+					f = parseInt(line.substring(4, line.indexOf(")")))/10.0;
+				} else if (line.startsWith("idiv(")) {
+					f = parseInt(line.substring(5, line.indexOf(")")))/100.0;
+				} else if (line.startsWith("iwid(")) {
+					f1 = parseInt(line.substring(5, line.indexOf(")")))/100.0;
+				} else if (line.startsWith("ScaleX(")) {
+					scaleX = parseInt(line.substring(7, line.indexOf(")")))/100.0;
+				} else if (line.startsWith("ScaleY(")) {
+					scaleY = parseInt(line.substring(7, line.indexOf(")")))/100.0;
+				} else if (line.startsWith("ScaleZ(")) {
+					scaleZ = parseInt(line.substring(7, line.indexOf(")")))/100.0;
+				} else if (line.startsWith("gwgr(")) {
+					currentGwgr = parseInt(line.substring(5, line.indexOf(")")));
+				} else if (line.startsWith("rims(")) {
+					var p = line.substring(5, line.indexOf(")")).split(",");
+					currentRims = {
+						r: parseInt(p[0]||150), g: parseInt(p[1]||150), b: parseInt(p[2]||150),
+						size: parseInt(p[3]), depth: parseInt(p[4])
+					};
+				} else if (line.startsWith("w(")) {
+					var p = line.substring(2, line.indexOf(")")).split(",");
+					if (!isStagePiece) {
+						rad.legacyWheels.push({
+							x: -parseFloat(p[0]) * f * f1 * scaleX * 0.1, 
+							y: parseFloat(p[1]) * f * scaleY * 0.1,
+							z: parseFloat(p[2]) * f * scaleZ * 0.1,
+							rotates: parseInt(p[3]||0),
+							width: parseFloat(p[4]) * f * f1 * 0.1  *0.1,
+							height: parseFloat(p[5]) * f * 0.1,
+							// Snapshot the current rims & gwgr state for THIS specific wheel!
+							rims: Object.assign({}, currentRims),
+							gwgr: currentGwgr
+						});
+					}
 				}
 			}
 
@@ -467,18 +548,20 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.edgebuf);
 			gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(webgl_edgeIndices), gl.STATIC_DRAW);
 
-			var darkenFactor = hasStonecold ? 0.95 : 0.0;
-			var darkColors = new Float32Array(webgl_colors.length);
-			for (var i = 0; i < webgl_colors.length; i += 4) {
-				darkColors[i]	 = webgl_colors[i] * darkenFactor;
-				darkColors[i + 1] = webgl_colors[i + 1] * darkenFactor;
-				darkColors[i + 2] = webgl_colors[i + 2] * darkenFactor;
-				darkColors[i + 3] = 1.0; // Outline alpha must be fully opaque
+			var darkenFactor = 0.0
+			if (isStagePiece) {
+				//darkenFactor = hasStonecold ? 1.0 : 0.95;
+				if ((hasStonecold) && (hasRoadProperty)) {
+					darkenFactor = 0.80;
+				} else {
+					//darkenFactor = 1.0;
+					darkenFactor = 0.80; //this is until all models are updated with road()
+				}
 			}
-
+			// Feed the perfectly synced dark color array directly to the GPU
 			rad.edgeColorBuf = gl.createBuffer();
 			gl.bindBuffer(gl.ARRAY_BUFFER, rad.edgeColorBuf);
-			gl.bufferData(gl.ARRAY_BUFFER, darkColors, gl.STATIC_DRAW);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(webgl_dark_colors), gl.STATIC_DRAW);
 
 			rad.ni = webgl_indices.length;
 			rad.nt = 1;
@@ -488,6 +571,8 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 			rad.isLegacyRad = true; 
 			rad.ownlight = true;
 			rad.hasStonecold = hasStonecold;
+			rad.hasRoadProperty = hasRoadProperty;
+			//rad.usesSpecialLighting = ((hasStonecold) && (hasRoadProperty));
 
 			// --- Crucial Fix For Physics Engine Requirements ---
 			if (isStagePiece) {
@@ -495,8 +580,10 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 				rad.intershad = true;
 				rad.dam = 1;
 				rad.walarc = 0.67;
+				rad.usesSpecialLighting = true;
 			} else {
 				rad.iscar = 1;
+				rad.usesSpecialLighting = false;
 			}
 			// ---------------------------------------------------
 
@@ -554,6 +641,17 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 
 			buildCollisionWireframe(rad);
 			rad.isCheckpoint = isCheckpoint ? true : false;
+			// --- GENERATE PROCEDURAL WHEELS ---
+			if (rad.legacyWheels.length > 0) {
+				rad.visualWheels = [];
+				for (var w = 0; w < rad.legacyWheels.length; w++) {
+					var def = rad.legacyWheels[w];
+					rad.visualWheels.push({
+						def: def,
+						mesh: createProceduralWheel(def, def.rims, 40)
+					});
+				}
+			}
 			rad.loaded = 1;
 			console.log(`Loaded .xrad: ${file} | ${webgl_vert_count} verts`);
 		}
@@ -583,6 +681,10 @@ function loadOldRad(file, rad, isStagePiece, isCheckpoint) {
 			var currentColor = [0.52, 0.73, 1.0, 1.0];
 			var hasGlass = false;
 			var fsVal = 1; // Default fs value (usually 1 or 0)
+			// --- NEW VARIABLES FOR LEGACY WHEELS ---
+			rad.legacyWheels = [];
+			var currentRims = { r: 150, g: 150, b: 150, size: 30, depth: 10 };
+			var currentGwgr = 40;
 			var isDecal = false;
 			var isLight = false;
 			var hasStonecold = false;
@@ -603,21 +705,28 @@ function loadOldRad(file, rad, isStagePiece, isCheckpoint) {
 			rad.skid = -1; // Default to -1 unless overridden by road()
 			rad.bndmax = 20; // Default collision depth
 			
-			// Helper to compute a flat polygon normal
+			// Helper to compute a flat polygon normal (Classic NFM 2004 3-Point Method)
 			function calculatePolygonNormal(poly_3d) {
-				var nx = 0, ny = 0, nz = 0;
-				var n = poly_3d.length;
-				for (var i = 0; i < n; i++) {
-					var p1 = poly_3d[i];
-					var p2 = poly_3d[(i + 1) % n];
-					nx += (p1[1] - p2[1]) * (p1[2] + p2[2]);
-					ny += (p1[2] - p2[2]) * (p1[0] + p2[0]);
-					nz += (p1[0] - p2[0]) * (p1[1] + p2[1]);
-				}
+				if (poly_3d.length < 3) return [0, -1, 0];
+
+				// Classic NFM only ever evaluates the first 3 vertices (Index 0, 1, and 2)
+				// It completely ignores the spatial data of any remaining points in bent quads!
+				var p0 = poly_3d[0];
+				var p1 = poly_3d[1];
+				var p2 = poly_3d[2];
+
+				// Exact Cross-Product formula translated from Java NFM's Plane.java
+				var nx = (p0[1] - p1[1]) * (p2[2] - p1[2]) - (p0[2] - p1[2]) * (p2[1] - p1[1]);
+				var ny = (p0[2] - p1[2]) * (p2[0] - p1[0]) - (p0[0] - p1[0]) * (p2[2] - p1[2]);
+				var nz = (p0[0] - p1[0]) * (p2[1] - p1[1]) - (p0[1] - p1[1]) * (p2[0] - p1[0]);
+
 				var len = Math.sqrt(nx * nx + ny * ny + nz * nz);
 				if (len > 1e-6) {
-					return [-nx / len, -ny / len, -nz / len];
+					// We don't need to negate this! The raw cross-product mathematically 
+					// produces the exact same sign orientation as the old negated Newell's output.
+					return [nx / len, ny / len, nz / len];
 				}
+
 				return [0, -1, 0];
 			}
 
@@ -1037,6 +1146,9 @@ function loadOldRad(file, rad, isStagePiece, isCheckpoint) {
 					closeCurrentPoly();
 					continue;
 				}
+				if (line.startsWith("strictshader()")) { // --- ADD THIS ---
+					rad.strictShader = true;
+				}
 				
 				if (line.startsWith("skid(")) {
 					rad.skid = parseInt(line.substring(5, line.indexOf(")")));
@@ -1143,6 +1255,33 @@ function loadOldRad(file, rad, isStagePiece, isCheckpoint) {
 				
 				if (line === "</p>" || line === "[/p]" || (i === lines.length-1 && currentPoly.length > 2)) {
 					closeCurrentPoly();
+				}
+				// --- Parse Legacy Wheel Command Directives ---
+				if (line.startsWith("gwgr(")) {
+					currentGwgr = parseInt(line.substring(5, line.indexOf(")")));
+				}
+				if (line.startsWith("rims(")) {
+					var p = line.substring(5, line.indexOf(")")).split(",");
+					currentRims = {
+						r: parseInt(p[0]||150), g: parseInt(p[1]||150), b: parseInt(p[2]||150),
+						size: parseInt(p[3]), depth: parseInt(p[4])
+					};
+				}
+				if (line.startsWith("w(")) {
+					var p = line.substring(2, line.indexOf(")")).split(",");
+					if (!isStagePiece) {
+						rad.legacyWheels.push({
+							x: -parseFloat(p[0]) * f * f1 * scaleX * 0.1, 
+							y: parseFloat(p[1]) * f * scaleY * 0.1,
+							z: parseFloat(p[2]) * f * scaleZ * 0.1,
+							rotates: parseInt(p[3]||0),
+							width: parseFloat(p[4]) * f * f1 * 0.1  *0.1,
+							height: parseFloat(p[5]) * f * 0.1,
+							// Snapshot the current rims & gwgr state for THIS specific wheel!
+							rims: Object.assign({}, currentRims),
+							gwgr: currentGwgr
+						});
+					}
 				}
 			}
 			
@@ -1286,6 +1425,17 @@ function loadOldRad(file, rad, isStagePiece, isCheckpoint) {
 			}
 			
 			buildCollisionWireframe(rad);
+			// --- GENERATE PROCEDURAL WHEELS ---
+			if (rad.legacyWheels.length > 0) {
+				rad.visualWheels = [];
+				for (var w = 0; w < rad.legacyWheels.length; w++) {
+					var def = rad.legacyWheels[w];
+					rad.visualWheels.push({
+						def: def,
+						mesh: createProceduralWheel(def, def.rims, 40)
+					});
+				}
+			}
 			console.log(`Loaded .rad: ${file} | ${vertIndex} verts`);
 		}
 	};
@@ -2106,50 +2256,77 @@ function createwheels() {
 		}
 	}
 }
+
+
 function setwheelspos() {
 	for (var c = 0; c < ncars; c++) {
 		var cn = car[c].typ;
-		whl[cn][0].x = (car[c].x - (wlx[cn][0] * car[c].mat[0]) - (wly[cn][0] * car[c].mat[4]) + (wlz[cn][0] * car[c].mat[8]));
-		whl[cn][0].y = (car[c].y - (wlx[cn][0] * car[c].mat[1]) - (wly[cn][0] * car[c].mat[5]) + (wlz[cn][0] * car[c].mat[9]));
-		whl[cn][0].z = (car[c].z - (wlx[cn][0] * car[c].mat[2]) - (wly[cn][0] * car[c].mat[6]) + (wlz[cn][0] * car[c].mat[10]));
-		whl[cn][0].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[cn][0].mat[k] = car[c].mat[k];
-		}
-		mat4.rotate(whl[cn][0].mat, whl[cn][0].mat, ((90 - car[c].wxz) * (Math.PI / 180)), [0, 1, 0]);
-		mat4.rotate(whl[cn][0].mat, whl[cn][0].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, -1]);
-		whl[cn][1].x = (car[c].x + (wlx[cn][0] * car[c].mat[0]) - (wly[cn][0] * car[c].mat[4]) + (wlz[cn][0] * car[c].mat[8]));
-		whl[cn][1].y = (car[c].y + (wlx[cn][0] * car[c].mat[1]) - (wly[cn][0] * car[c].mat[5]) + (wlz[cn][0] * car[c].mat[9]));
-		whl[cn][1].z = (car[c].z + (wlx[cn][0] * car[c].mat[2]) - (wly[cn][0] * car[c].mat[6]) + (wlz[cn][0] * car[c].mat[10]));
-		whl[cn][1].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[cn][1].mat[k] = car[c].mat[k];
-		}
-		mat4.rotate(whl[cn][1].mat, whl[cn][1].mat, ((-90 - car[c].wxz) * (Math.PI / 180)), [0, 1, 0]);
-		mat4.rotate(whl[cn][1].mat, whl[cn][1].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, 1]);
-		whl[cn][2].x = (car[c].x - (wlx[cn][1] * car[c].mat[0]) - (wly[cn][1] * car[c].mat[4]) + (wlz[cn][1] * car[c].mat[8]));
-		whl[cn][2].y = (car[c].y - (wlx[cn][1] * car[c].mat[1]) - (wly[cn][1] * car[c].mat[5]) + (wlz[cn][1] * car[c].mat[9]));
-		whl[cn][2].z = (car[c].z - (wlx[cn][1] * car[c].mat[2]) - (wly[cn][1] * car[c].mat[6]) + (wlz[cn][1] * car[c].mat[10]));
-		whl[cn][2].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[cn][2].mat[k] = car[c].mat[k];
-		}
-		mat4.rotate(whl[cn][2].mat, whl[cn][2].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
-		mat4.rotate(whl[cn][2].mat, whl[cn][2].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, -1]);
-		whl[cn][3].x = (car[c].x + (wlx[cn][1] * car[c].mat[0]) - (wly[cn][1] * car[c].mat[4]) + (wlz[cn][1] * car[c].mat[8]));
-		whl[cn][3].y = (car[c].y + (wlx[cn][1] * car[c].mat[1]) - (wly[cn][1] * car[c].mat[5]) + (wlz[cn][1] * car[c].mat[9]));
-		whl[cn][3].z = (car[c].z + (wlx[cn][1] * car[c].mat[2]) - (wly[cn][1] * car[c].mat[6]) + (wlz[cn][1] * car[c].mat[10]));
-		whl[cn][3].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[cn][3].mat[k] = car[c].mat[k];
-		}
-		mat4.rotate(whl[cn][3].mat, whl[cn][3].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
-		mat4.rotate(whl[cn][3].mat, whl[cn][3].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, 1]);
-		for (var j = 0; j < 4; j++) {
-			whl[cn][j].dist = pyd(whl[cn][j].x, camx, whl[cn][j].y, camy, whl[cn][j].z, camz);
+		var cRad = carobj[cn];
+		
+		if (!whl[cn]) whl[cn] = [];
+		if (!whl[cn].legacyWheels) whl[cn].legacyWheels = [];
+
+		if (cRad.visualWheels) {
+			for (var w = 0; w < cRad.visualWheels.length; w++) {
+				var vw = cRad.visualWheels[w].def;
+				if (!whl[cn].legacyWheels[w]) whl[cn].legacyWheels[w] = { mat: mat4.create() };
+				var lW = whl[cn].legacyWheels[w];
+
+				var steer = 0;
+				if (vw.rotates === 11) steer = -car[c].wxz;
+				if (vw.rotates === -11) steer = car[c].wxz;
+
+				lW.x = car[c].x + (vw.x * car[c].mat[0]) - (vw.y * car[c].mat[4]) + (vw.z * car[c].mat[8]);
+				lW.y = car[c].y + (vw.x * car[c].mat[1]) - (vw.y * car[c].mat[5]) + (vw.z * car[c].mat[9]);
+				lW.z = car[c].z + (vw.x * car[c].mat[2]) - (vw.y * car[c].mat[6]) + (vw.z * car[c].mat[10]);
+
+				for (var k = 0; k < 12; k++) lW.mat[k] = car[c].mat[k];
+
+				mat4.rotate(lW.mat, lW.mat, (steer * (Math.PI / 180)), [0, 1, 0]);
+				mat4.rotate(lW.mat, lW.mat, (car[c].wzy * (Math.PI / 180)), [-1, 0, 0]);
+			}
+		} else {
+			// FULLY RESTORED ORIGINAL 4-WHEEL LOGIC
+			whl[cn][0].x = (car[c].x - (wlx[cn][0] * car[c].mat[0]) - (wly[cn][0] * car[c].mat[4]) + (wlz[cn][0] * car[c].mat[8]));
+			whl[cn][0].y = (car[c].y - (wlx[cn][0] * car[c].mat[1]) - (wly[cn][0] * car[c].mat[5]) + (wlz[cn][0] * car[c].mat[9]));
+			whl[cn][0].z = (car[c].z - (wlx[cn][0] * car[c].mat[2]) - (wly[cn][0] * car[c].mat[6]) + (wlz[cn][0] * car[c].mat[10]));
+			whl[cn][0].mat = mat4.create();
+			for (var k = 0; k < 12; k++) whl[cn][0].mat[k] = car[c].mat[k];
+			mat4.rotate(whl[cn][0].mat, whl[cn][0].mat, ((90 - car[c].wxz) * (Math.PI / 180)), [0, 1, 0]);
+			mat4.rotate(whl[cn][0].mat, whl[cn][0].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, -1]);
+
+			whl[cn][1].x = (car[c].x + (wlx[cn][0] * car[c].mat[0]) - (wly[cn][0] * car[c].mat[4]) + (wlz[cn][0] * car[c].mat[8]));
+			whl[cn][1].y = (car[c].y + (wlx[cn][0] * car[c].mat[1]) - (wly[cn][0] * car[c].mat[5]) + (wlz[cn][0] * car[c].mat[9]));
+			whl[cn][1].z = (car[c].z + (wlx[cn][0] * car[c].mat[2]) - (wly[cn][0] * car[c].mat[6]) + (wlz[cn][0] * car[c].mat[10]));
+			whl[cn][1].mat = mat4.create();
+			for (var k = 0; k < 12; k++) whl[cn][1].mat[k] = car[c].mat[k];
+			mat4.rotate(whl[cn][1].mat, whl[cn][1].mat, ((-90 - car[c].wxz) * (Math.PI / 180)), [0, 1, 0]);
+			mat4.rotate(whl[cn][1].mat, whl[cn][1].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, 1]);
+
+			whl[cn][2].x = (car[c].x - (wlx[cn][1] * car[c].mat[0]) - (wly[cn][1] * car[c].mat[4]) + (wlz[cn][1] * car[c].mat[8]));
+			whl[cn][2].y = (car[c].y - (wlx[cn][1] * car[c].mat[1]) - (wly[cn][1] * car[c].mat[5]) + (wlz[cn][1] * car[c].mat[9]));
+			whl[cn][2].z = (car[c].z - (wlx[cn][1] * car[c].mat[2]) - (wly[cn][1] * car[c].mat[6]) + (wlz[cn][1] * car[c].mat[10]));
+			whl[cn][2].mat = mat4.create();
+			for (var k = 0; k < 12; k++) whl[cn][2].mat[k] = car[c].mat[k];
+			mat4.rotate(whl[cn][2].mat, whl[cn][2].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
+			mat4.rotate(whl[cn][2].mat, whl[cn][2].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, -1]);
+
+			whl[cn][3].x = (car[c].x + (wlx[cn][1] * car[c].mat[0]) - (wly[cn][1] * car[c].mat[4]) + (wlz[cn][1] * car[c].mat[8]));
+			whl[cn][3].y = (car[c].y + (wlx[cn][1] * car[c].mat[1]) - (wly[cn][1] * car[c].mat[5]) + (wlz[cn][1] * car[c].mat[9]));
+			whl[cn][3].z = (car[c].z + (wlx[cn][1] * car[c].mat[2]) - (wly[cn][1] * car[c].mat[6]) + (wlz[cn][1] * car[c].mat[10]));
+			whl[cn][3].mat = mat4.create();
+			for (var k = 0; k < 12; k++) whl[cn][3].mat[k] = car[c].mat[k];
+			mat4.rotate(whl[cn][3].mat, whl[cn][3].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
+			mat4.rotate(whl[cn][3].mat, whl[cn][3].mat, (car[c].wzy * (Math.PI / 180)), [0, 0, 1]);
+			
+			for (var j = 0; j < 4; j++) {
+				whl[cn][j].dist = pyd(whl[cn][j].x, camx, whl[cn][j].y, camy, whl[cn][j].z, camz);
+			}
 		}
 	}
 }
+
+
 var shadadj = [6.5, -2, -4, 0, 0, 2.5, -6.9, -7, -2.5, 3.5, -1.5, 1, -0.5, 2.5, 1, -1, -10, 1.1, 2.8];
 function shadoworks() {
 	for (var c = 0; c < ncars; c++) {
@@ -2526,6 +2703,8 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 		if (rad.alpha == 1) gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		if (rad.alpha == 2) gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_COLOR);
 		if (rad.alpha == 3) gl.blendFunc(gl.ONE_MINUS_CONSTANT_COLOR, gl.DST_ALPHA);
+	} else {
+		gl.disable(gl.BLEND); // THIS IS THE FIX!
 	}
 
 	var pro = 1;
@@ -2588,6 +2767,20 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 		if (programInfo[5].uniformLocations.uAutoFlip) gl.uniform1f(programInfo[5].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
 		if (programInfo[5].uniformLocations.uDisableFog !== undefined) gl.uniform1f(programInfo[5].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
 		if (programInfo[5].uniformLocations.uUnlit) gl.uniform1f(programInfo[5].uniformLocations.uUnlit, rad.ownshade ? 1.0 : 0.0);
+		if (programInfo[5].uniformLocations.uUsesSpecialLighting) {
+			gl.uniform1f(programInfo[5].uniformLocations.uUsesSpecialLighting, rad.usesSpecialLighting ? 0.0 : 1.0);
+		}
+		if (programInfo[5].uniformLocations.uStrictShader) {
+			gl.uniform1f(programInfo[5].uniformLocations.uStrictShader, rad.strictShader ? 1.0 : 0.0);
+		}
+		var envMode = 0.0;
+		if (rad === skydom) envMode = 1.0;
+		else if (rad === ground || rad === window.proceduralBaseFloor) envMode = 2.0;
+		else if (rad === window.proceduralClouds) envMode = 3.0;
+		else if (rad === window.proceduralMountains) envMode = 4.0;
+		if (programInfo[5].uniformLocations.uEnvBlendMode) {
+			gl.uniform1f(programInfo[5].uniformLocations.uEnvBlendMode, envMode);
+		}
 	}
 
 	gl.uniformMatrix4fv(programInfo[pro].uniformLocations.projectionMatrix, false, cmat);
@@ -2610,34 +2803,49 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 
 	// === BLACK OUTLINES FOR LEGACY .rad MODELS ===
 	if (rad.hasEdges && rad.edgebuf && rad.edgeColorBuf) {
-		gl.disable(gl.BLEND);
-		gl.useProgram(programInfo[0].program); 
-		gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
-		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexPosition);
 		
-		if (programInfo[0].attribLocations.vertexNormal !== undefined && programInfo[0].attribLocations.vertexNormal !== -1) {
-			gl.bindBuffer(gl.ARRAY_BUFFER, rad.nbuf);
-			gl.vertexAttribPointer(programInfo[0].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
-			gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexNormal);
+		// --- DISTANCE CULLING LOGIC ---
+		var MAX_OUTLINE_DISTANCE = 2000.0; // Tweak this! (8000 is roughly when fog gets thick)
+		
+		// Calculate the squared distance from the camera to the object
+		var distSq = (rx - camx) * (rx - camx) + (ry - camy) * (ry - camy) + (rz - camz) * (rz - camz);
+		
+		// Only draw the edges if it's close enough, OR if it's the Fix Hoop!
+		if (rad === build[31] || distSq < (MAX_OUTLINE_DISTANCE * MAX_OUTLINE_DISTANCE)) {
+			
+			gl.disable(gl.BLEND);
+			gl.useProgram(programInfo[0].program); 
+			gl.bindBuffer(gl.ARRAY_BUFFER, rad.vbuf);
+			gl.vertexAttribPointer(programInfo[0].attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+			gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexPosition);
+			
+			if (programInfo[0].attribLocations.vertexNormal !== undefined && programInfo[0].attribLocations.vertexNormal !== -1) {
+				gl.bindBuffer(gl.ARRAY_BUFFER, rad.nbuf);
+				gl.vertexAttribPointer(programInfo[0].attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+				gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexNormal);
+			}
+			
+			gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.edgebuf);
+			gl.bindBuffer(gl.ARRAY_BUFFER, rad.edgeColorBuf);
+			gl.vertexAttribPointer(programInfo[0].attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
+			gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexColor);
+			
+			gl.uniformMatrix4fv(programInfo[0].uniformLocations.projectionMatrix, false, cmat);
+			gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, mvMat); 
+			
+			if (programInfo[0].uniformLocations.normalMatrix) gl.uniformMatrix4fv(programInfo[0].uniformLocations.normalMatrix, false, normalMatrix);
+			if (programInfo[0].uniformLocations.uLastCheckRemaining) gl.uniform1f(programInfo[0].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
+			if (programInfo[0].uniformLocations.uTime) gl.uniform1f(programInfo[0].uniformLocations.uTime, chkflk);
+			if (programInfo[0].uniformLocations.uAutoFlip) gl.uniform1f(programInfo[0].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
+			if (programInfo[0].uniformLocations.uDisableFog !== undefined) gl.uniform1f(programInfo[0].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
+			if (programInfo[0].uniformLocations.uUsesSpecialLighting) gl.uniform1f(programInfo[0].uniformLocations.uUsesSpecialLighting, rad.usesSpecialLighting ? 0.0 : 1.0);
+			if (programInfo[0].uniformLocations.uStrictShader) gl.uniform1f(programInfo[0].uniformLocations.uStrictShader, rad.strictShader ? 1.0 : 0.0);
+			if (programInfo[0].uniformLocations.applySnapFilter) gl.uniform1f(programInfo[0].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
+			if (programInfo[0].uniformLocations.uBraking) gl.uniform1f(programInfo[0].uniformLocations.uBraking, rad.isBraking ? 1.0 : 0.0);
+			
+			gl.lineWidth(2.5);
+			gl.drawElements(gl.LINES, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
 		}
-		
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rad.edgebuf);
-		gl.bindBuffer(gl.ARRAY_BUFFER, rad.edgeColorBuf);
-		gl.vertexAttribPointer(programInfo[0].attribLocations.vertexColor, 4, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(programInfo[0].attribLocations.vertexColor);
-		
-		gl.uniformMatrix4fv(programInfo[0].uniformLocations.projectionMatrix, false, cmat);
-		gl.uniformMatrix4fv(programInfo[0].uniformLocations.modelViewMatrix, false, mvMat); // Use temp matrix
-		
-		if (programInfo[0].uniformLocations.normalMatrix) gl.uniformMatrix4fv(programInfo[0].uniformLocations.normalMatrix, false, normalMatrix);
-		if (programInfo[0].uniformLocations.uLastCheckRemaining) gl.uniform1f(programInfo[0].uniformLocations.uLastCheckRemaining, lastCPActive ? 1.0 : 0.0);
-		if (programInfo[0].uniformLocations.uTime) gl.uniform1f(programInfo[0].uniformLocations.uTime, chkflk);
-		if (programInfo[0].uniformLocations.uAutoFlip) gl.uniform1f(programInfo[0].uniformLocations.uAutoFlip, rad.isCheckpoint ? 1.0 : 0.0);
-		if (programInfo[0].uniformLocations.uDisableFog !== undefined) gl.uniform1f(programInfo[0].uniformLocations.uDisableFog, rad.disableFog ? 1.0 : 0.0);
-		
-		gl.lineWidth(2.5);
-		gl.drawElements(gl.LINES, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
 	}
 
 	// We MUST attach the temp mvMat to the object temporarily so drawDebugCollisions can read it!
@@ -2646,383 +2854,418 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 
 
 
-function setworld(snap, fogc, ldx, ldy, ldz, fogdist) {
-	var ambcol = [];
-	var defcol = [];
-	var owncol = [];
-	var litcol = [];
-	var fogcol = [];
-	for (var i = 0; i < 3; i++) {
-		ambcol[i] = (0.6 + (snap[i] * 0.6));
-		//ambcol[i] *= 0.76;
-		defcol[i] = (0.7 + (snap[i] * 0.7));
-		//defcol[i] *= 0.76;
-		owncol[i] = (1.2 + (snap[i] * 1.2));
-		//owncol[i] *= 0.76;
-		litcol[i] = (1.3 + (snap[i] * 1.3));
-		//litcol[i] *= 0.76;
-		fogcol[i] = (fogc[i] / 255);
-		fogcol[i] = (fogcol[i] + (fogcol[i] * snap[i]));
-		//fogcol[i] *= 0.76;
-	}
-	var dirvec = [ldx, ldy, ldz];
-	var fogstart = 100;
-	var fogend = fogdist;
-	var vsSource = [];
-	var fsSource = [];
 
-	// Custom Outlines Shader (Program 0)
-	vsSource[0] = `
-		attribute vec4 aVertexPosition; 
-		attribute vec4 aVertexColor; 
-		attribute vec3 aVertexNormal; 
-		uniform mat4 uModelViewMatrix; 
-		uniform mat4 uProjectionMatrix; 
-		uniform mat4 uNormalMatrix; 
-		uniform float uLastCheckRemaining; 
-		uniform float uTime; 
-		uniform float uAutoFlip; 
-		varying lowp vec4 vColor; 
-		varying vec3 v_posf; 
-		void main(void) { 
-			vec4 localPos = aVertexPosition;
-			vec3 localNorm = aVertexNormal;
+var shadersCompiled = false;
+function setworld(snapArr, fogcArr, ldx, ldy, ldz, fogD) {
+	if (!shadersCompiled) {
+		var vsSource = [];
+		var fsSource = [];
 
-			// --- GPU Auto-Flip Optimization ---
-			if (uAutoFlip > 0.5) {
-				vec3 objPosWorldRel = -(uModelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-				vec3 objZWorld = -(uModelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
-				// If the camera is behind the object, flip it 180 degrees around local Y!
-				if (dot(objZWorld, -objPosWorldRel) > 0.0) {
-					localPos.x = -localPos.x;
-					localPos.z = -localPos.z;
-					localNorm.x = -localNorm.x;
-					localNorm.z = -localNorm.z;
+		// Custom Outlines Shader (Program 0)
+		vsSource[0] = `
+			attribute vec4 aVertexPosition; 
+			attribute vec4 aVertexColor; 
+			attribute vec3 aVertexNormal; 
+			uniform mat4 uModelViewMatrix; 
+			uniform mat4 uProjectionMatrix; 
+			uniform mat4 uNormalMatrix; 
+			uniform float uLastCheckRemaining; 
+			uniform float uTime; 
+			uniform float uAutoFlip; 
+			uniform vec3 uSnap;
+			uniform float uUsesSpecialLighting;
+			uniform float uStrictShader; 
+			uniform vec3 uDirLightVec; 
+			
+			uniform float applySnapFilter; 
+			uniform float uBraking; 
+
+			varying lowp vec4 vColor; 
+			varying vec3 v_posf; 
+			void main(void) { 
+				vec4 localPos = aVertexPosition;
+				vec3 localNorm = aVertexNormal;
+				if (uAutoFlip > 0.5) {
+					vec3 objPosWorldRel = -(uModelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+					vec3 objZWorld = -(uModelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
+					if (dot(objZWorld, -objPosWorldRel) > 0.0) {
+						localPos.x = -localPos.x; localPos.z = -localPos.z;
+						localNorm.x = -localNorm.x; localNorm.z = -localNorm.z;
+					}
 				}
-			}
-
-			gl_Position = uProjectionMatrix * uModelViewMatrix * localPos; 
-			
-			// Push the outline slightly toward the camera to prevent z-fighting gaps
-			gl_Position.z -= 0.00001 * gl_Position.w; 
-
-			v_posf = (uModelViewMatrix * localPos).xyz; 
-			
-			float normalLength = length(localNorm);
-			bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
-			bool isGr18 = (normalLength > 17.5 && normalLength < 18.5);
-			
-			// Collapse coordinates for gr(-13) if last checkpoint is NOT active
-			if (isGr13 && uLastCheckRemaining < 0.5) {
-				gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
-			}
-			
-			vec3 rawNormal = localNorm;
-			if (normalLength > 0.1) {
-				rawNormal = localNorm / normalLength;
-			}
-			
-			vec3 transformedNormal = normalize((uNormalMatrix * vec4(rawNormal, 0.0)).xyz); 
-			if (dot(transformedNormal, normalize(v_posf)) > 0.0) {
-				transformedNormal = -transformedNormal;
-			}
-			
-			// Lighting directional multiplier
-			float f1 = transformedNormal.y + 0.08; 
-			f1 = clamp(f1, 0.45, 0.9);
-			
-			// Atmospheric snap filter
-			vec3 finalColor = aVertexColor.rgb;
-			vec3 snapFactor = vec3(` + snap[0] + `, ` + snap[1] + `, ` + snap[2] + `);
-			finalColor = clamp(finalColor + finalColor * snapFactor, 0.0, 1.0);
-			
-			vColor = vec4(finalColor * f1, aVertexColor.a); 
-			
-			if (isGr18) {
-				// Instantaneous digital flickering in unison
-				float flicker = mod(floor(uTime * 5.0), 4.0);
-				vec3 glowColor = vec3(0.0, 0.5, 1.0);
-				if (flicker == 1.0) glowColor = vec3(0.2, 0.9, 1.0);
-				else if (flicker == 2.0) glowColor = vec3(0.0, 0.2, 0.8);
-				else if (flicker == 3.0) glowColor = vec3(0.8, 0.9, 1.0);
-				vColor = vec4(glowColor, 1.0);
-			}
-		}`;
-	
-	fsSource[0] = `precision mediump float; varying vec3 v_posf; varying lowp vec4 vColor; uniform float uDisableFog; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance) * (1.0 - uDisableFog); gl_FragColor = mix(vColor, u_fogColor, fogAmount); }`;	vsSource[1] = `attribute vec4 aVertexPosition; attribute vec3 aVertexNormal; attribute vec2 aTextureCoord; uniform mat4 uNormalMatrix; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting;varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight = vec3(` + ambcol[0] + `,` + ambcol[1] + `,` + ambcol[2] + `); highp vec3 directionalLightColor = vec3(` + defcol[0] + `,` + defcol[1] + `,` + defcol[2] + `); highp vec3 directionalVector = normalize(vec3(` + dirvec[0] + `,` + dirvec[1] + `,` + dirvec[2] + `)); highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0); vLighting = ambientLight + (directionalLightColor * directional); v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
-	fsSource[1] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
-	vsSource[2] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight=vec3(` + owncol[0] + `,` + owncol[1] + `,` + owncol[2] + `); vLighting = ambientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
-	fsSource[2] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
-	vsSource[3] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight=vec3(` + litcol[0] + `,` + litcol[1] + `,` + litcol[2] + `); vLighting = ambientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
-	fsSource[3] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
-	vsSource[4] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec3 ambientLight=vec3(1,1,1); vLighting = ambientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
-	fsSource[4] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;uniform sampler2D uSampler; highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);highp float u_fogNear=` + fogstart + `.0;highp float u_fogFar=` + fogend + `.0; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
-
-	// Custom Flat Shading Shader (Program 5)
-	// Custom Flat Shading Shader (Program 5)
-	vsSource[5] = `
-		attribute vec4 aVertexPosition; 
-		attribute vec4 aVertexColor; 
-		attribute vec3 aVertexNormal; 
-		uniform mat4 uModelViewMatrix; 
-		uniform mat4 uProjectionMatrix; 
-		uniform mat4 uNormalMatrix; 
-		uniform float applySnapFilter; 
-		uniform float uBraking; 
-		uniform float uLastCheckRemaining; 
-		uniform float uUnlit;
-		uniform float uAutoFlip; 
-		varying lowp vec4 vColor; 
-		varying vec3 v_posf; 
-		void main(void) { 
-			vec4 localPos = aVertexPosition;
-			vec3 localNorm = aVertexNormal;
-
-			// --- GPU Auto-Flip Optimization ---
-			if (uAutoFlip > 0.5) {
-				vec3 objPosWorldRel = -(uModelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-				vec3 objZWorld = -(uModelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
-				// If the camera is behind the object, flip it 180 degrees around local Y!
-				if (dot(objZWorld, -objPosWorldRel) > 0.0) {
-					localPos.x = -localPos.x;
-					localPos.z = -localPos.z;
-					localNorm.x = -localNorm.x;
-					localNorm.z = -localNorm.z;
+				
+				vec4 viewPos = uModelViewMatrix * localPos;
+				v_posf = viewPos.xyz; 
+				
+				float normalLength = length(localNorm);
+				bool isDecal = (normalLength > 1.5);
+				bool isHeadlight = (normalLength > 2.5 && normalLength < 3.5);
+				bool isBrakeLight = (normalLength > 3.5 && normalLength < 4.5);
+				bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
+				bool isGr18 = (normalLength > 17.5 && normalLength < 18.5);
+				bool isLight = isHeadlight || isBrakeLight;
+				
+				// --- EXACT PHYSICAL DEPTH NUDGE ---
+				// Regular outlines get 0.05, but Light/Decal outlines get 0.20 
+				// so they sit on top of the 0.15 depth nudge from the main shader!
+				float nudgeDist = isDecal ? 0.4 : 0.4;
+				viewPos.xyz -= normalize(viewPos.xyz) * nudgeDist; 
+				gl_Position = uProjectionMatrix * viewPos;
+				
+				if (isGr13 && uLastCheckRemaining < 0.5) gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+				
+				vec3 rawNormal = localNorm;
+				if (normalLength > 0.1) rawNormal = localNorm / normalLength;
+				
+				vec3 transformedNormal = normalize((uNormalMatrix * vec4(rawNormal, 0.0)).xyz); 
+				if (uStrictShader < 0.5) {
+					if (dot(transformedNormal, normalize(v_posf)) > 0.0) {
+						transformedNormal = -transformedNormal;
+					}
 				}
-			}
-
-			gl_Position = uProjectionMatrix * uModelViewMatrix * localPos; 
-			v_posf = (uModelViewMatrix * localPos).xyz; 
-			
-			float normalLength = length(localNorm);
-			
-			// --- Normal-Length Decoder ---
-			bool isDecal = (normalLength > 1.5);
-			bool isHeadlight = (normalLength > 2.5 && normalLength < 3.5);
-			bool isBrakeLight = (normalLength > 3.5 && normalLength < 4.5);
-			bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
-			bool isLight = isHeadlight || isBrakeLight;
-			// ------------------------------
-			
-			// Collapse gr(-13) geometry if last checkpoint is NOT remaining
-			if (isGr13 && uLastCheckRemaining < 0.5) {
-				gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
-			}
-			
-			vec3 rawNormal = localNorm;
-			if (normalLength > 0.1) {
-				rawNormal = localNorm / normalLength;
-			}
-			
-			vec3 transformedNormal = normalize((uNormalMatrix * vec4(rawNormal, 0.0)).xyz); 
-			if (dot(transformedNormal, normalize(v_posf)) > 0.0) {
-				transformedNormal = -transformedNormal;
-			}
-			
-			// --- Clip-Space Depth Bias for Decals ---
-			if (isDecal) {
-				gl_Position.z -= 0.00001 * gl_Position.w; 
-			}
-			
-			// lighting value for models
-			float f1 = transformedNormal.y + 0.08; 
-			f1 = clamp(f1, 0.45, 0.9);
-			
-			// --- Stage Snap Color Filter ---
-			vec3 finalColor = aVertexColor.rgb;
-			bool isGlass = (aVertexColor.a < 0.95);
-			
-			float lightIntensity = 0.0;
-			bool activeLight = false;
-			
-			if (isHeadlight) {
-				lightIntensity = 1.0 - applySnapFilter;
-				activeLight = (lightIntensity > 0.0);
-			} else if (isBrakeLight) {
-				float stageLightsOn = 1.0 - applySnapFilter;
-				lightIntensity = mix(stageLightsOn * 0.50, 1.0, uBraking);
-				activeLight = (lightIntensity > 0.0);
-			}
-			
-			if (activeLight) {
-				f1 = 1.0;
-				finalColor = finalColor * lightIntensity;
-			} else if (uUnlit < 0.5) { 
-				// ONLY apply the shader snap-filter to regular track/car models.
-				// Our procedural background is already pre-snapped perfectly in JS!
-				if (!isGlass) {
+				
+				// --- SPLIT LIGHTING CURVES ---
+				float minLight = (uUsesSpecialLighting > 0.5) ? 0.60 : 0.45;
+				float maxLight = (uUsesSpecialLighting > 0.5) ? 1.00 : 0.90;
+				float f1;
+				
+				if (uStrictShader > 0.5) {
+					float sunIntensity = max(dot(transformedNormal.xyz, uDirLightVec), 0.0);
+					f1 = mix(minLight, maxLight, sunIntensity);
+				} else {
+					f1 = clamp(transformedNormal.y + 0.08, minLight, maxLight);
+				}
+				// -----------------------------
+				
+				vec3 finalColor = aVertexColor.rgb;
+				float lightIntensity = 0.0;
+				bool activeLight = false;
+				
+				if (isHeadlight) {
+					lightIntensity = 1.0 - applySnapFilter;
+					activeLight = (lightIntensity > 0.0);
+				} else if (isBrakeLight) {
+					float stageLightsOn = 1.0 - applySnapFilter;
+					lightIntensity = mix(stageLightsOn * 0.50, 1.0, uBraking);
+					activeLight = (lightIntensity > 0.0);
+				}
+				
+				// If it's glowing, bypass atmospheric darkening AND bypass standard shading!
+				if (activeLight) {
+					f1 = 1.0;
+					finalColor = finalColor * lightIntensity;
+				} else {
 					float factor = isLight ? applySnapFilter : 1.0;
-					vec3 snapFactor = vec3(` + snap[0] + `, ` + snap[1] + `, ` + snap[2] + `);
-					finalColor = clamp(finalColor + finalColor * (snapFactor * factor), 0.0, 1.0);
+					finalColor = clamp(finalColor + finalColor * (uSnap * factor), 0.0, 1.0);
+				}
+				
+				vColor = vec4(finalColor * f1, aVertexColor.a); 
+				
+				if (isGr18) {
+					float flicker = mod(floor(uTime * 5.0), 4.0);
+					vec3 glowColor = vec3(0.0, 0.5, 1.0);
+					if (flicker == 1.0) glowColor = vec3(0.2, 0.9, 1.0);
+					else if (flicker == 2.0) glowColor = vec3(0.0, 0.2, 0.8);
+					else if (flicker == 3.0) glowColor = vec3(0.8, 0.9, 1.0);
+					vColor = vec4(glowColor, 1.0);
+				}
+			}`;
+		
+		fsSource[0] = `precision mediump float; varying vec3 v_posf; varying lowp vec4 vColor; uniform float uDisableFog; uniform vec4 u_fogColor; uniform float u_fogNear; uniform float u_fogFar; void main(void) { float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance) * (1.0 - uDisableFog); gl_FragColor = mix(vColor, u_fogColor, fogAmount); }`;
+		vsSource[1] = `attribute vec4 aVertexPosition; attribute vec3 aVertexNormal; attribute vec2 aTextureCoord; uniform mat4 uNormalMatrix; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; uniform vec3 uAmbientLight; uniform vec3 uDirLightColor; uniform vec3 uDirLightVec; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); highp float directional = max(dot(transformedNormal.xyz, uDirLightVec), 0.0); vLighting = uAmbientLight + (uDirLightColor * directional); v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
+		fsSource[1] = `precision mediump float;varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf; uniform sampler2D uSampler; uniform vec4 u_fogColor; uniform float u_fogNear; uniform float u_fogFar; void main(void) { highp vec4 texelColor = texture2D(uSampler, vTextureCoord); float abx=abs(v_posf.x); float aby=abs(v_posf.y); float abz=abs(v_posf.z); float fct=(abs(abx-abz)/(abx+abz)); float mav=((abx+abz)/(2.0-fct)); float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance); highp vec4 color=vec4(texelColor.rgb * vLighting, texelColor.a); gl_FragColor = mix(color, u_fogColor, fogAmount); }`;
+		vsSource[2] = `attribute vec4 aVertexPosition; attribute vec2 aTextureCoord; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; uniform vec3 uAmbientLight; varying highp vec2 vTextureCoord; varying highp vec3 vLighting; varying vec3 v_posf;void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vTextureCoord = aTextureCoord; vLighting = uAmbientLight; v_posf = (uModelViewMatrix * aVertexPosition).xyz; }`;
+		fsSource[2] = fsSource[1];
+		vsSource[3] = vsSource[2];
+		fsSource[3] = fsSource[1];
+		vsSource[4] = vsSource[2];
+		fsSource[4] = fsSource[1];
+
+		// Custom Flat Shading Shader (Program 5)
+		vsSource[5] = `
+			attribute vec4 aVertexPosition; 
+			attribute vec4 aVertexColor; 
+			attribute vec3 aVertexNormal; 
+			uniform mat4 uModelViewMatrix; 
+			uniform mat4 uProjectionMatrix; 
+			uniform mat4 uNormalMatrix; 
+			uniform float applySnapFilter; 
+			uniform float uBraking; 
+			uniform float uLastCheckRemaining; 
+			uniform float uUnlit;
+			uniform float uAutoFlip; 
+			
+			uniform vec3 uSnap;
+			uniform float uEnvBlendMode;
+			uniform float uUsesSpecialLighting;
+			uniform float uStrictShader;
+			uniform vec3 uSkyColor;
+			uniform vec3 uFogColor;
+			uniform vec3 uGroundColor;
+			uniform vec3 uPolysColor;
+			uniform vec3 uCloudColor;
+
+			varying lowp vec4 vColor; 
+			varying vec3 v_posf; 
+			
+			void main(void) { 
+				vec4 localPos = aVertexPosition;
+				vec3 localNorm = aVertexNormal;
+
+				if (uAutoFlip > 0.5) {
+					vec3 objPosWorldRel = -(uModelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+					vec3 objZWorld = -(uModelViewMatrix * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
+					if (dot(objZWorld, -objPosWorldRel) > 0.0) {
+						localPos.x = -localPos.x; localPos.z = -localPos.z;
+						localNorm.x = -localNorm.x; localNorm.z = -localNorm.z;
+					}
+				}
+
+				vec4 viewPos = uModelViewMatrix * localPos;
+			v_posf = viewPos.xyz; 
+				
+				float normalLength = length(localNorm);
+				bool isDecal = (normalLength > 1.5);
+				bool isHeadlight = (normalLength > 2.5 && normalLength < 3.5);
+				bool isBrakeLight = (normalLength > 3.5 && normalLength < 4.5);
+				bool isGr13 = (normalLength > 12.5 && normalLength < 13.5);
+				bool isLight = isHeadlight || isBrakeLight;
+				
+				// --- EXACT PHYSICAL DEPTH NUDGE ---
+			// Pulls decals exactly 0.15 physical units toward the camera lens
+			if (isDecal) {
+				viewPos.xyz -= normalize(viewPos.xyz) * 0.4; 
+			}
+			
+			gl_Position = uProjectionMatrix * viewPos;
+				
+				if (isGr13 && uLastCheckRemaining < 0.5) gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
+				
+				vec3 rawNormal = localNorm;
+				if (normalLength > 0.1) rawNormal = localNorm / normalLength;
+				vec3 transformedNormal = normalize((uNormalMatrix * vec4(rawNormal, 0.0)).xyz); 
+			
+			// If strictshader() is NOT applied, use the legacy double-sided flipping
+			if (uStrictShader < 0.5) {
+				if (dot(transformedNormal, normalize(v_posf)) > 0.0) {
+					transformedNormal = -transformedNormal;
 				}
 			}
+				//if (isDecal) gl_Position.z -= 0.00001 * gl_Position.w; 
+				
+				float minLight = (uUsesSpecialLighting > 0.5) ? 0.60 : 0.37;
+				float maxLight = (uUsesSpecialLighting > 0.5) ? 1.00 : 0.88;
+				// smoothstep( lower_edge, upper_edge, value ) creates a beautiful S-curve!
+float curve = smoothstep(0.52, 1.0, transformedNormal.y); 
 
-			if (uUnlit > 0.5) {
-				//f1 = 0.76;
-				f1 = 1.0;
-			}
-			
-			vColor = vec4(finalColor * f1, aVertexColor.a); 
-		}`;
-	fsSource[5] = `
-		precision highp float; 
-		varying vec3 v_posf; 
-		varying lowp vec4 vColor; 
-		uniform float uDisableFog;
-		highp vec4 u_fogColor=vec4(` + fogcol[0] + `,` + fogcol[1] + `,` + fogcol[2] + `,1);
-		highp float u_fogNear=` + fogstart + `.0;
-		highp float u_fogFar=` + fogend + `.0; 
-		void main(void) { 
-			float abx=abs(v_posf.x); 
-			float aby=abs(v_posf.y); 
-			float abz=abs(v_posf.z); 
-			float fct=(abs(abx-abz)/(abx+abz)); 
-			float mav=((abx+abz)/(2.0-fct)); 
-			float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); 
-			float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);
-			
-			// Bypass fog for Sky and Clouds so they never disappear in the distance!
-			if (uDisableFog > 0.5) fogAmount = 0.0;
-			
-			gl_FragColor = mix(vColor, u_fogColor, fogAmount); 
-		}`;
+// mix( min_brightness, max_brightness, curve )
+float f1 = mix(minLight, maxLight, curve);
+				vec3 finalColor = aVertexColor.rgb;
+				
+				// --- PROCEDURAL ENVIRONMENT LIVE COLOR MIXING ---
+				if (uEnvBlendMode == 1.0) { // Skybox Wedge
+					// aVertexColor.rgb = Independent Sky Darkening Multipliers (R, G, B)
+					// aVertexNormal.x = Fog Weight | aVertexNormal.y = Ground Weight
+					finalColor = (aVertexColor.rgb * uSkyColor) + (aVertexNormal.x * uFogColor) + (aVertexNormal.y * uGroundColor);
+				} else if (uEnvBlendMode == 2.0) { // Ground Polys
+					finalColor = aVertexColor.r * uPolysColor + aVertexColor.g * uGroundColor;
+				} else if (uEnvBlendMode == 3.0) { // Clouds
+					finalColor = aVertexColor.rgb * uCloudColor;
+				} else if (uEnvBlendMode == 4.0) { // Mountains
+					vec3 mountainRaw = aVertexColor.rgb * (1.0 + uSnap); // Apply atmospheric snap
+					finalColor = mix(mountainRaw, uGroundColor, aVertexColor.a);
+				}
+				// ------------------------------------------------
 
-	vsSource[6] = `
-		attribute vec4 aVertexPosition; 
-		attribute vec4 aVertexColor; 
-		attribute vec3 aVertexNormal; 
-		uniform mat4 uModelViewMatrix; 
-		uniform mat4 uProjectionMatrix; 
-		uniform vec3 uCamPos;
-		uniform vec3 uCarPos;
-		varying lowp vec4 vColor; 
-		void main(void) { 
-			gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; 
-			vec3 worldPos = (uModelViewMatrix * aVertexPosition).xyz + uCamPos;
-			vec3 worldNormal = (uModelViewMatrix * vec4(aVertexNormal, 0.0)).xyz;
-			vec3 toCar = uCarPos - worldPos;
-			float d = dot(worldNormal, toCar);
-			gl_Position.z -= 0.0001 * gl_Position.w; 
-			if (d < 0.0) {
-				gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
-			}
-			vColor = aVertexColor; 
-		}`;
-	fsSource[6] = `
-		precision mediump float;
-		varying lowp vec4 vColor;
-		void main(void) {
-			gl_FragColor = vColor;
+				bool isGlass = (aVertexColor.a < 0.95);
+				float lightIntensity = 0.0;
+				bool activeLight = false;
+				
+				if (isHeadlight) {
+					lightIntensity = 1.0 - applySnapFilter;
+					activeLight = (lightIntensity > 0.0);
+				} else if (isBrakeLight) {
+					float stageLightsOn = 1.0 - applySnapFilter;
+					lightIntensity = mix(stageLightsOn * 0.50, 1.0, uBraking);
+					activeLight = (lightIntensity > 0.0);
+				}
+				
+				if (activeLight) {
+					f1 = 1.0;
+					finalColor = finalColor * lightIntensity;
+				} else if (uUnlit < 0.5 && uEnvBlendMode == 0.0) { 
+					if (!isGlass) {
+						float factor = isLight ? applySnapFilter : 1.0;
+						finalColor = clamp(finalColor + finalColor * (uSnap * factor), 0.0, 1.0);
+					}
+				}
+
+				if (uUnlit > 0.5) f1 = 1.0;
+				vColor = vec4(finalColor * f1, aVertexColor.a); 
+			}`;
+		
+		fsSource[5] = `
+			precision highp float; 
+			varying vec3 v_posf; 
+			varying lowp vec4 vColor; 
+			uniform float uDisableFog;
+			uniform vec4 u_fogColor;
+			uniform float u_fogNear;
+			uniform float u_fogFar; 
+			void main(void) { 
+				float abx=abs(v_posf.x); 
+				float aby=abs(v_posf.y); 
+				float abz=abs(v_posf.z); 
+				float fct=(abs(abx-abz)/(abx+abz)); 
+				float mav=((abx+abz)/(2.0-fct)); 
+				float fogDistance=((mav+(mav*(1.0-fct)*0.414))+(aby*0.5)); 
+				float fogAmount = smoothstep(u_fogNear, u_fogFar, fogDistance);
+				if (uDisableFog > 0.5) fogAmount = 0.0;
+				gl_FragColor = mix(vColor, u_fogColor, fogAmount); 
+			}`;
+
+		vsSource[6] = `attribute vec4 aVertexPosition; attribute vec4 aVertexColor; attribute vec3 aVertexNormal; uniform mat4 uModelViewMatrix; uniform mat4 uProjectionMatrix; uniform vec3 uCamPos; uniform vec3 uCarPos; varying lowp vec4 vColor; void main(void) { gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition; vec3 worldPos = (uModelViewMatrix * aVertexPosition).xyz + uCamPos; vec3 worldNormal = (uModelViewMatrix * vec4(aVertexNormal, 0.0)).xyz; vec3 toCar = uCarPos - worldPos; float d = dot(worldNormal, toCar); gl_Position.z -= 0.0001 * gl_Position.w; if (d < 0.0) { gl_Position = vec4(0.0, 0.0, 0.0, 0.0); } vColor = aVertexColor; }`;
+		fsSource[6] = `precision mediump float; varying lowp vec4 vColor; void main(void) { gl_FragColor = vColor; }`;
+
+		for (var i = 0; i < 7; i++) {
+			var shaderProg = initShaderProgram(gl, vsSource[i], fsSource[i]);
+			programInfo[i] = {
+				program: shaderProg,
+				attribLocations: {
+					vertexPosition: gl.getAttribLocation(shaderProg, 'aVertexPosition'),
+					vertexColor: gl.getAttribLocation(shaderProg, 'aVertexColor'),
+					vertexNormal: gl.getAttribLocation(shaderProg, 'aVertexNormal'),
+					textureCoord: gl.getAttribLocation(shaderProg, 'aTextureCoord')
+				},
+				uniformLocations: {
+					// Mapped without the "u" prefix so original drawrad3D code finds them perfectly!
+					projectionMatrix: gl.getUniformLocation(shaderProg, 'uProjectionMatrix'),
+					modelViewMatrix: gl.getUniformLocation(shaderProg, 'uModelViewMatrix'),
+					normalMatrix: gl.getUniformLocation(shaderProg, 'uNormalMatrix'),
+					uSampler: gl.getUniformLocation(shaderProg, 'uSampler'),
+					applySnapFilter: gl.getUniformLocation(shaderProg, 'applySnapFilter'),
+					uBraking: gl.getUniformLocation(shaderProg, 'uBraking'),
+					uTime: gl.getUniformLocation(shaderProg, 'uTime'),
+					uLastCheckRemaining: gl.getUniformLocation(shaderProg, 'uLastCheckRemaining'),
+					uUnlit: gl.getUniformLocation(shaderProg, 'uUnlit'),
+					uAutoFlip: gl.getUniformLocation(shaderProg, 'uAutoFlip'),
+					uDisableFog: gl.getUniformLocation(shaderProg, 'uDisableFog'),
+					uSnap: gl.getUniformLocation(shaderProg, 'uSnap'),
+					uEnvBlendMode: gl.getUniformLocation(shaderProg, 'uEnvBlendMode'),
+					uSkyColor: gl.getUniformLocation(shaderProg, 'uSkyColor'),
+					uFogColor: gl.getUniformLocation(shaderProg, 'uFogColor'),
+					uGroundColor: gl.getUniformLocation(shaderProg, 'uGroundColor'),
+					uPolysColor: gl.getUniformLocation(shaderProg, 'uPolysColor'),
+					uCloudColor: gl.getUniformLocation(shaderProg, 'uCloudColor'),
+					u_fogColor: gl.getUniformLocation(shaderProg, 'u_fogColor'),
+					u_fogNear: gl.getUniformLocation(shaderProg, 'u_fogNear'),
+					u_fogFar: gl.getUniformLocation(shaderProg, 'u_fogFar'),
+					uAmbientLight: gl.getUniformLocation(shaderProg, 'uAmbientLight'),
+					uDirLightColor: gl.getUniformLocation(shaderProg, 'uDirLightColor'),
+					uDirLightVec: gl.getUniformLocation(shaderProg, 'uDirLightVec'),
+					uCamPos: gl.getUniformLocation(shaderProg, 'uCamPos'),
+					uCarPos: gl.getUniformLocation(shaderProg, 'uCarPos'),
+					uUsesSpecialLighting: gl.getUniformLocation(shaderProg, 'uUsesSpecialLighting'),
+					uStrictShader: gl.getUniformLocation(shaderProg, 'uStrictShader')
+				}
+			};
 		}
-	`;
-
-	var shaderProgram = [];
-	for (var i = 0; i < 7; i++) {
-		programInfo[i] = null;
-		shaderProgram[i] = initShaderProgram(gl, vsSource[i], fsSource[i]);
+		shadersCompiled = true;
 	}
-	programInfo[0] = {
-		program: shaderProgram[0],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[0], 'aVertexPosition'),
-			vertexColor: gl.getAttribLocation(shaderProgram[0], 'aVertexColor'),
-			vertexNormal: gl.getAttribLocation(shaderProgram[0], 'aVertexNormal'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[0], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[0], 'uModelViewMatrix'),
-			normalMatrix: gl.getUniformLocation(shaderProgram[0], 'uNormalMatrix'),
-			uLastCheckRemaining: gl.getUniformLocation(shaderProgram[0], 'uLastCheckRemaining'),
-			uTime: gl.getUniformLocation(shaderProgram[0], 'uTime'),
-			uAutoFlip: gl.getUniformLocation(shaderProgram[0], 'uAutoFlip'),
-			uDisableFog: gl.getUniformLocation(shaderProgram[0], 'uDisableFog'),
-		}
-	};
-	programInfo[1] = {
-		program: shaderProgram[1],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[1], 'aVertexPosition'),
-			vertexNormal: gl.getAttribLocation(shaderProgram[1], 'aVertexNormal'),
-			textureCoord: gl.getAttribLocation(shaderProgram[1], 'aTextureCoord'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[1], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[1], 'uModelViewMatrix'),
-			normalMatrix: gl.getUniformLocation(shaderProgram[1], 'uNormalMatrix'),
-			uSampler: gl.getUniformLocation(shaderProgram[1], 'uSampler'),
-		}
-	};
-	programInfo[2] = {
-		program: shaderProgram[2],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[2], 'aVertexPosition'),
-			textureCoord: gl.getAttribLocation(shaderProgram[2], 'aTextureCoord'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[2], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[2], 'uModelViewMatrix'),
-			uSampler: gl.getUniformLocation(shaderProgram[2], 'uSampler'),
-		}
-	};
-	programInfo[3] = {
-		program: shaderProgram[3],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[3], 'aVertexPosition'),
-			textureCoord: gl.getAttribLocation(shaderProgram[3], 'aTextureCoord'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[3], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[3], 'uModelViewMatrix'),
-			uSampler: gl.getUniformLocation(shaderProgram[3], 'uSampler'),
-		}
-	};
-	programInfo[4] = {
-		program: shaderProgram[4],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[4], 'aVertexPosition'),
-			textureCoord: gl.getAttribLocation(shaderProgram[4], 'aTextureCoord'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[4], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[4], 'uModelViewMatrix'),
-			uSampler: gl.getUniformLocation(shaderProgram[4], 'uSampler'),
-		}
-	};
-	programInfo[5] = { // Configured Program 5 Attributes & Uniforms
-		program: shaderProgram[5],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[5], 'aVertexPosition'),
-			vertexColor: gl.getAttribLocation(shaderProgram[5], 'aVertexColor'),
-			vertexNormal: gl.getAttribLocation(shaderProgram[5], 'aVertexNormal'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[5], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[5], 'uModelViewMatrix'),
-			normalMatrix: gl.getUniformLocation(shaderProgram[5], 'uNormalMatrix'),
-			applySnapFilter: gl.getUniformLocation(shaderProgram[5], 'applySnapFilter'),
-			uBraking: gl.getUniformLocation(shaderProgram[5], 'uBraking'),
-			uTime: gl.getUniformLocation(shaderProgram[5], 'uTime'), // Added
-			uLastCheckRemaining: gl.getUniformLocation(shaderProgram[5], 'uLastCheckRemaining'), // Added
-			uUnlit: gl.getUniformLocation(shaderProgram[5], 'uUnlit'),
-			uAutoFlip: gl.getUniformLocation(shaderProgram[5], 'uAutoFlip'),
-			uDisableFog: gl.getUniformLocation(shaderProgram[5], 'uDisableFog')
-		}
-	};
-	programInfo[6] = {
-		program: shaderProgram[6],
-		attribLocations: {
-			vertexPosition: gl.getAttribLocation(shaderProgram[6], 'aVertexPosition'),
-			vertexColor: gl.getAttribLocation(shaderProgram[6], 'aVertexColor'),
-			vertexNormal: gl.getAttribLocation(shaderProgram[6], 'aVertexNormal'),
-		},
-		uniformLocations: {
-			projectionMatrix: gl.getUniformLocation(shaderProgram[6], 'uProjectionMatrix'),
-			modelViewMatrix: gl.getUniformLocation(shaderProgram[6], 'uModelViewMatrix'),
-			uCamPos: gl.getUniformLocation(shaderProgram[6], 'uCamPos'),
-			uCarPos: gl.getUniformLocation(shaderProgram[6], 'uCarPos'),
-		}
-	};
+	
+	// Call our fast instantaneous color update!
+	// Added safety fallback 'window.' declarations so it survives the Car Select Screen!
+	window.changeStageColors(
+		window.stageGroundColor || [150, 150, 150], 
+		window.stagePolysColor || [115, 115, 115], 
+		window.stageSky || [0, 0, 0], 
+		fogcArr, 
+		window.stageClouds || [255, 255, 255], 
+		snapArr, [ldx, ldy, ldz], fogD
+	);
 }
+
+
+
+// Extremely fast uniform updater for Instant/Granular Color Fading (0ms latency!)
+window.changeStageColors = function(grndC, polysC, skyC, fogC, cloudC, snapArr, dirVec, fogD) {
+	if (grndC) window.stageGroundColor = grndC;
+	if (polysC) window.stagePolysColor = polysC;
+	if (skyC) window.stageSky = skyC;
+	if (fogC) window.stageFog = fogC;
+	if (cloudC) window.stageClouds = cloudC;
+	
+	// SAFE SCOPING: Use the passed arrays, but NEVER overwrite the global game arrays!
+	var currentSnap = snapArr || snap;
+	var currentFogDist = fogD || fogdist;
+	
+	var ldx = dirVec ? dirVec[0] : lvx;
+	var ldy = dirVec ? dirVec[1] : lvy;
+	var ldz = dirVec ? dirVec[2] : lvz;
+	lvx = ldx; lvy = ldy; lvz = ldz;
+
+	var ambcol = [], defcol = [], owncol = [], litcol = [], fogcol = [];
+	for (var i = 0; i < 3; i++) {
+		ambcol[i] = (0.6 + (currentSnap[i] * 0.6));
+		defcol[i] = (0.7 + (currentSnap[i] * 0.7));
+		owncol[i] = (1.2 + (currentSnap[i] * 1.2));
+		litcol[i] = (1.3 + (currentSnap[i] * 1.3));
+		fogcol[i] = (window.stageFog[i] / 255);
+		fogcol[i] = (fogcol[i] + (fogcol[i] * currentSnap[i]));
+	}
+	
+	function applySnap(c) {
+		if (!c) return [0,0,0];
+		return [
+			Math.max(0, Math.min(255, c[0] + c[0] * currentSnap[0])),
+			Math.max(0, Math.min(255, c[1] + c[1] * currentSnap[1])),
+			Math.max(0, Math.min(255, c[2] + c[2] * currentSnap[2]))
+		];
+	}
+	
+	var sSky = applySnap(window.stageSky);
+	var sFog = applySnap(window.stageFog);
+	var sGrnd = applySnap(window.stageGroundColor);
+	var sPolys = applySnap(window.stagePolysColor);
+	var sCloud = applySnap(window.stageClouds);
+	
+	var skyArr = [sSky[0]/255, sSky[1]/255, sSky[2]/255];
+	var fogArr = [sFog[0]/255, sFog[1]/255, sFog[2]/255];
+	var grndArr = [sGrnd[0]/255, sGrnd[1]/255, sGrnd[2]/255];
+	var polysArr = [sPolys[0]/255, sPolys[1]/255, sPolys[2]/255];
+	var cloudArr = [sCloud[0]/255, sCloud[1]/255, sCloud[2]/255];
+
+	for (var i = 0; i <= 6; i++) {
+		if (!programInfo[i]) continue;
+		gl.useProgram(programInfo[i].program);
+		var locs = programInfo[i].uniformLocations;
+		
+		if (locs.u_fogColor) gl.uniform4f(locs.u_fogColor, fogcol[0], fogcol[1], fogcol[2], 1.0);
+		if (locs.u_fogNear) gl.uniform1f(locs.u_fogNear, 100.0);
+		if (locs.u_fogFar) gl.uniform1f(locs.u_fogFar, currentFogDist);
+		
+		if (locs.uAmbientLight) {
+			if (i==1) gl.uniform3fv(locs.uAmbientLight, ambcol);
+			else if (i==2) gl.uniform3fv(locs.uAmbientLight, owncol);
+			else if (i==3) gl.uniform3fv(locs.uAmbientLight, litcol);
+			else if (i==4) gl.uniform3fv(locs.uAmbientLight, [1,1,1]);
+		}
+		if (locs.uDirLightColor) gl.uniform3fv(locs.uDirLightColor, defcol);
+		if (locs.uDirLightVec) {
+			var len = Math.sqrt(ldx*ldx + ldy*ldy + ldz*ldz);
+			gl.uniform3f(locs.uDirLightVec, ldx/len, ldy/len, ldz/len);
+		}
+		
+		// Pass the live variables directly to the GPU!
+		if (locs.uSnap) gl.uniform3fv(locs.uSnap, currentSnap);
+		if (locs.uSkyColor) gl.uniform3fv(locs.uSkyColor, skyArr);
+		if (locs.uFogColor) gl.uniform3fv(locs.uFogColor, fogArr); 
+		if (locs.uGroundColor) gl.uniform3fv(locs.uGroundColor, grndArr);
+		if (locs.uPolysColor) gl.uniform3fv(locs.uPolysColor, polysArr);
+		if (locs.uCloudColor) gl.uniform3fv(locs.uCloudColor, cloudArr);
+	}
+};
+
 function initShaderProgram(gl, vsSource, fsSource) {
 	const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
 	const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
@@ -3370,7 +3613,7 @@ function loaddata() {
 			for (var i = 0; i < 19; i++) {
 				if ((i == 1) || (i == 2) || (i == 7) || (i == 10) || (i == 11) || (i == 12) || (i == 13)) {
 					loadOldRad("data/3D/car" + i + ".rad", carobj[i], false, false);
-				} else if ((i == 0) || (i == 14) || (i == 15) || (i == 16) || (i == 17) || (i == 18)) {
+				} else if ((i == 0) || (i == 9) || (i == 14) || (i == 15) || (i == 16) || (i == 17) || (i == 18)) {
 					loadXRad("data/3D/car" + i + ".xrad", carobj[i], false, false);
 				} else {
 					loadrad3D("data/3D/car" + i + ".r3d", carobj[i]);
@@ -3607,6 +3850,31 @@ function loaddata() {
 			//
 			//removed this, perhaps a skymad leftover?
 			cartextures();
+			// --- INJECT LEGACY WHEEL DATA FOR PHYSICS & GRAT ---
+			for(var i = 0; i < 19; i++) {
+				 if (carobj[i] && carobj[i].legacyWheels && carobj[i].legacyWheels.length > 0) {
+					 var lw = carobj[i].legacyWheels;
+					 var front = lw[0], rear = lw[0];
+					 var maxGrat = -9999;
+					 
+					 for (var w = 0; w < lw.length; w++) {
+						 if (lw[w].z > front.z) front = lw[w];
+						 if (lw[w].z < rear.z) rear = lw[w];
+						 
+						 // EXACT NFM Physics Radius: y + (height * 1.3)
+						 var currentGrat = lw[w].y + (lw[w].height * 1.45); //1.3 original
+						 if (currentGrat > maxGrat) maxGrat = currentGrat;
+					 }
+					 
+					 wlx[i] = [Math.abs(front.x), Math.abs(rear.x)];
+					 wly[i] = [front.y, rear.y];
+					 wlz[i] = [front.z, rear.z];
+					 wlh[i] = [front.height, rear.height]; 
+					 
+					 carobj[i].customGrat = maxGrat;
+				 }
+			}
+
 			createwheels();
 			creatdustextures();
 			onskip = false;
@@ -3770,9 +4038,9 @@ function loadstage() {
 						var blendVal = getIntValue("clouds", line, 3);
 						window.stageCloudsBlend = (blendVal === -1) ? 0 : blendVal;
 						
-						// Parse Height Value (defaults to 0 if missing)
+						// Parse Height Value (defaults to -1000 if missing)
 						var heightVal = getIntValue("clouds", line, 4);
-						window.stageCloudsHeight = (heightVal === -1) ? 0 : heightVal;
+						window.stageCloudsHeight = (heightVal === -1) ? -1000 : heightVal;
 						
 						// Keep legacy global var updated just in case
 						stageClouds = [cloudsc[0], cloudsc[1], cloudsc[2]]; 
@@ -4081,7 +4349,7 @@ var fi = [];
 var onelec = false;
 function cpanimate() {
 	for (var i = 0; i < nf; i++) {
-		mat4.rotate(obo[fi[i]].mat, obo[fi[i]].mat, (11 * m * (Math.PI / 180)), [0, 0, 1]);
+		mat4.rotate(obo[fi[i]].mat, obo[fi[i]].mat, (11 * physicsMultiplier * (Math.PI / 180)), [0, 0, 1]);
 	}
 	fixdisk.ont++;
 	if (fixdisk.ont == 5) {
@@ -4276,10 +4544,10 @@ function chipsfly() {
 			chip[i].x = (car[chip[i].cn].x + chip[i].rx);
 			chip[i].y = (car[chip[i].cn].y + chip[i].ry);
 			chip[i].z = (car[chip[i].cn].z + chip[i].rz);
-			chip[i].rx += (chip[i].vx * m);
-			chip[i].ry += (chip[i].vy * m);
-			chip[i].rz += (chip[i].vz * m);
-			chip[i].vy -= (0.7 * m);
+			chip[i].rx += (chip[i].vx * physicsMultiplier);
+			chip[i].ry += (chip[i].vy * physicsMultiplier);
+			chip[i].rz += (chip[i].vz * physicsMultiplier);
+			chip[i].vy -= (0.7 * physicsMultiplier);
 			if (chip[i].rtn1 < 3) {
 				var a1rot = [0, 0, 0];
 				a1rot[chip[i].rtn1] = 1;
@@ -4290,7 +4558,7 @@ function chipsfly() {
 				a2rot[chip[i].rtn2] = 1;
 				mat4.rotate(chip[i].mat, chip[i].mat, (chip[i].rtn2mag * (Math.PI / 180)), a2rot);
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				chip[i].loaded++;
 				if (chip[i].loaded == 100) {
 					chip[i].loaded = 0;
@@ -4395,9 +4663,9 @@ function sprksfly() {
 	var nfly = false;
 	for (var i = 0; i < nspr; i++) {
 		if (sprk[i].stat != 0) {
-			sprk[i].x += (sprk[i].mat[8] * sprk[i].sp * m);
-			sprk[i].y += (sprk[i].mat[9] * sprk[i].sp * m);
-			sprk[i].z += (sprk[i].mat[10] * sprk[i].sp * m);
+			sprk[i].x += (sprk[i].mat[8] * sprk[i].sp * physicsMultiplier);
+			sprk[i].y += (sprk[i].mat[9] * sprk[i].sp * physicsMultiplier);
+			sprk[i].z += (sprk[i].mat[10] * sprk[i].sp * physicsMultiplier);
 			sprk[i].stat++;
 			if (sprk[i].stat == 8) {
 				sprk[i].stat = 0;
@@ -4650,14 +4918,14 @@ function expburn() {
 			}
 			exp[i].y += exp[i].vy;
 			if (exp[i].first) {
-				exp[i].x += (exp[i].vsx * m);
+				exp[i].x += (exp[i].vsx * physicsMultiplier);
 				exp[i].vsx *= 0.95;
-				exp[i].y += (exp[i].vsy * m);
+				exp[i].y += (exp[i].vsy * physicsMultiplier);
 				exp[i].vsy *= 0.95;
-				exp[i].z += (exp[i].vsz * m);
+				exp[i].z += (exp[i].vsz * physicsMultiplier);
 				exp[i].vsz *= 0.95;
-				exp[i].size += (exp[i].size * 0.05 * m);
-				exp[i].ani += (0.85 * m);
+				exp[i].size += (exp[i].size * 0.05 * physicsMultiplier);
+				exp[i].ani += (0.85 * physicsMultiplier);
 			} else {
 				exp[i].first = true;
 			}
@@ -4879,7 +5147,7 @@ function gameworks() {
 		if (bado > 20) {
 			bado = 20;
 		}
-		bado *= m;
+		bado *= physicsMultiplier;
 		if (lookback != 0) {
 			if (lookback == 1) {
 				if (bcxz < 180) {
@@ -4919,9 +5187,9 @@ function gameworks() {
 	if (camode == 1) {
 		if (!high) {
 			if (!vert) {
-				adv += (0.2 * m);
+				adv += (0.2 * physicsMultiplier);
 			} else {
-				adv -= (0.2 * m);
+				adv -= (0.2 * physicsMultiplier);
 			}
 			if (adv > 90) {
 				vert = true;
@@ -4930,7 +5198,7 @@ function gameworks() {
 				vert = false;
 			}
 		} else {
-			adv -= (1.4 * m);
+			adv -= (1.4 * physicsMultiplier);
 			if (adv < 61.7) {
 				adv = 61.7;
 			}
@@ -4951,9 +5219,9 @@ function gameworks() {
 		camx = car[cim].x + (amp * mcos(vxz));
 		camz = car[cim].z + (amp * msin(vxz));
 		if (!high) {
-			vxz -= (2 * m);
+			vxz -= (2 * physicsMultiplier);
 		} else {
-			vxz -= (4 * m);
+			vxz -= (4 * physicsMultiplier);
 		}
 		var ad = 0;
 		var ty = camy;
@@ -5014,9 +5282,9 @@ function gameworks() {
 		var trny = (((car[cim].y * (30 - htrns)) + (car[cim2].y * htrns)) / 30);
 		var trnz = (((car[cim].z * (30 - htrns)) + (car[cim2].z * htrns)) / 30);
 		if (!vert) {
-			adv += (0.2 * m);
+			adv += (0.2 * physicsMultiplier);
 		} else {
-			adv -= (0.2 * m);
+			adv -= (0.2 * physicsMultiplier);
 		}
 		if (adv > 90) {
 			vert = true;
@@ -5034,7 +5302,7 @@ function gameworks() {
 		}
 		camx = trnx + (amp * mcos(vxz));
 		camz = trnz + (amp * msin(vxz));
-		vxz -= (2 * m);
+		vxz -= (2 * physicsMultiplier);
 		var ad = 0;
 		var ty = camy;
 		if (ty < 0) {
@@ -5070,7 +5338,7 @@ function gameworks() {
 		if (bado > 20) {
 			bado = 20;
 		}
-		bado *= m;
+		bado *= physicsMultiplier;
 		if (lookback != 0) {
 			if ((!lbR) && (lbL)) {
 					bcxz += 6;
@@ -5119,7 +5387,7 @@ function gameworks() {
 		if (bado > 20) {
 			bado = 20;
 		}
-		bado *= m;
+		bado *= physicsMultiplier;
 		if (lookback != 0) {
 			if ((!lbR) && (lbL)) {
 					bcxz -= 6;
@@ -5171,8 +5439,9 @@ function gameworks() {
 	
 	// Rotate the skybox to perfectly cancel out the camera's Yaw (camxz). 
 	// This locks the flat face of the 'V' perfectly parallel to your screen!
-	mat4.rotate(skydom.mat, skydom.mat, (-camxz * (Math.PI / 180)), [0, 1, 0]);
+	//mat4.rotate(skydom.mat, skydom.mat, (-camxz * (Math.PI / 180)), [0, -1, 0]); //this seenms redundant in render()?
 
+	mat4.rotate(cmat, cmat, (camzy * (Math.PI / 180)), [1, 0, 0]);
 	updateframe = true;
 }
 var csxz = 0, cszy = 0;
@@ -5360,7 +5629,8 @@ function carselect() {
 		}
 	}
 	carobj[sel[0]].x = 0;
-	carobj[sel[0]].y = (wly[sel[0]][1] + (1.5 * wlh[sel[0]][1]) + carmy);
+	var cg = carobj[sel[0]].customGrat !== undefined ? carobj[sel[0]].customGrat : (wly[sel[0]][1] + (1.5 * wlh[sel[0]][1]));
+	carobj[sel[0]].y = cg + carmy;
 	carobj[sel[0]].z = -98;
 	carobj[sel[0]].ont = 0;
 	csxz -= 4.5; // car select rotation speed
@@ -5381,38 +5651,7 @@ function carselect() {
 	carobj[sel[0]].mat[8] = xmt[2];
 	carobj[sel[0]].mat[9] = ymt[2];
 	carobj[sel[0]].mat[10] = zmt[2];
-	whl[sel[0]][0].x = (carobj[sel[0]].x - (wlx[sel[0]][0] * carobj[sel[0]].mat[0]) - (wly[sel[0]][0] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[8]));
-	whl[sel[0]][0].y = (carobj[sel[0]].y - (wlx[sel[0]][0] * carobj[sel[0]].mat[1]) - (wly[sel[0]][0] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[9]));
-	whl[sel[0]][0].z = (carobj[sel[0]].z - (wlx[sel[0]][0] * carobj[sel[0]].mat[2]) - (wly[sel[0]][0] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[10]));
-	whl[sel[0]][0].mat = mat4.create();
-	for (var k = 0; k < 12; k++) {
-		whl[sel[0]][0].mat[k] = carobj[sel[0]].mat[k];
-	}
-	mat4.rotate(whl[sel[0]][0].mat, whl[sel[0]][0].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
-	whl[sel[0]][1].x = (carobj[sel[0]].x + (wlx[sel[0]][0] * carobj[sel[0]].mat[0]) - (wly[sel[0]][0] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[8]));
-	whl[sel[0]][1].y = (carobj[sel[0]].y + (wlx[sel[0]][0] * carobj[sel[0]].mat[1]) - (wly[sel[0]][0] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[9]));
-	whl[sel[0]][1].z = (carobj[sel[0]].z + (wlx[sel[0]][0] * carobj[sel[0]].mat[2]) - (wly[sel[0]][0] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[10]));
-	whl[sel[0]][1].mat = mat4.create();
-	for (var k = 0; k < 12; k++) {
-		whl[sel[0]][1].mat[k] = carobj[sel[0]].mat[k];
-	}
-	mat4.rotate(whl[sel[0]][1].mat, whl[sel[0]][1].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
-	whl[sel[0]][2].x = (carobj[sel[0]].x - (wlx[sel[0]][1] * carobj[sel[0]].mat[0]) - (wly[sel[0]][1] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[8]));
-	whl[sel[0]][2].y = (carobj[sel[0]].y - (wlx[sel[0]][1] * carobj[sel[0]].mat[1]) - (wly[sel[0]][1] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[9]));
-	whl[sel[0]][2].z = (carobj[sel[0]].z - (wlx[sel[0]][1] * carobj[sel[0]].mat[2]) - (wly[sel[0]][1] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[10]));
-	whl[sel[0]][2].mat = mat4.create();
-	for (var k = 0; k < 12; k++) {
-		whl[sel[0]][2].mat[k] = carobj[sel[0]].mat[k];
-	}
-	mat4.rotate(whl[sel[0]][2].mat, whl[sel[0]][2].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
-	whl[sel[0]][3].x = (carobj[sel[0]].x + (wlx[sel[0]][1] * carobj[sel[0]].mat[0]) - (wly[sel[0]][1] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[8]));
-	whl[sel[0]][3].y = (carobj[sel[0]].y + (wlx[sel[0]][1] * carobj[sel[0]].mat[1]) - (wly[sel[0]][1] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[9]));
-	whl[sel[0]][3].z = (carobj[sel[0]].z + (wlx[sel[0]][1] * carobj[sel[0]].mat[2]) - (wly[sel[0]][1] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[10]));
-	whl[sel[0]][3].mat = mat4.create();
-	for (var k = 0; k < 12; k++) {
-		whl[sel[0]][3].mat[k] = carobj[sel[0]].mat[k];
-	}
-	mat4.rotate(whl[sel[0]][3].mat, whl[sel[0]][3].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
+	updateMenuWheels(sel[0]);
 	var cat = 0.5;
 	if (Math.abs(carobj[sel[0]].mat[9]) > Math.abs(carobj[sel[0]].mat[1])) {
 		cat = 0.4;
@@ -5515,7 +5754,7 @@ function stageselect() {
 	}
 	camxz = vxz;
 	for (var i = 0; i < nf; i++) {
-		mat4.rotate(obo[fi[i]].mat, obo[fi[i]].mat, (11 * m * (Math.PI / 180)), [0, 0, 1]);
+		mat4.rotate(obo[fi[i]].mat, obo[fi[i]].mat, (11 * physicsMultiplier * (Math.PI / 180)), [0, 0, 1]);
 	}
 	fixdisk.ont++;
 	if (fixdisk.ont == 5) {
@@ -5553,7 +5792,8 @@ function unlockedcar() {
 		camxz = 0;
 		camzy = 0;
 		carobj[sel[0]].x = 0;
-		carobj[sel[0]].y = (wly[sel[0]][1] + (1.5 * wlh[sel[0]][1]) - 17);
+		var cg = carobj[sel[0]].customGrat !== undefined ? carobj[sel[0]].customGrat : (wly[sel[0]][1] + (1.5 * wlh[sel[0]][1]));
+		carobj[sel[0]].y = cg - 17;
 		carobj[sel[0]].z = -80;
 		carobj[sel[0]].ont = 0;
 		csxz += 2;
@@ -5595,38 +5835,7 @@ function unlockedcar() {
 		carobj[sel[0]].mat[8] = xmt[2];
 		carobj[sel[0]].mat[9] = ymt[2];
 		carobj[sel[0]].mat[10] = zmt[2];
-		whl[sel[0]][0].x = (carobj[sel[0]].x - (wlx[sel[0]][0] * carobj[sel[0]].mat[0]) - (wly[sel[0]][0] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[8]));
-		whl[sel[0]][0].y = (carobj[sel[0]].y - (wlx[sel[0]][0] * carobj[sel[0]].mat[1]) - (wly[sel[0]][0] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[9]));
-		whl[sel[0]][0].z = (carobj[sel[0]].z - (wlx[sel[0]][0] * carobj[sel[0]].mat[2]) - (wly[sel[0]][0] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[10]));
-		whl[sel[0]][0].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[sel[0]][0].mat[k] = carobj[sel[0]].mat[k];
-		}
-		mat4.rotate(whl[sel[0]][0].mat, whl[sel[0]][0].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
-		whl[sel[0]][1].x = (carobj[sel[0]].x + (wlx[sel[0]][0] * carobj[sel[0]].mat[0]) - (wly[sel[0]][0] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[8]));
-		whl[sel[0]][1].y = (carobj[sel[0]].y + (wlx[sel[0]][0] * carobj[sel[0]].mat[1]) - (wly[sel[0]][0] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[9]));
-		whl[sel[0]][1].z = (carobj[sel[0]].z + (wlx[sel[0]][0] * carobj[sel[0]].mat[2]) - (wly[sel[0]][0] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][0] * carobj[sel[0]].mat[10]));
-		whl[sel[0]][1].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[sel[0]][1].mat[k] = carobj[sel[0]].mat[k];
-		}
-		mat4.rotate(whl[sel[0]][1].mat, whl[sel[0]][1].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
-		whl[sel[0]][2].x = (carobj[sel[0]].x - (wlx[sel[0]][1] * carobj[sel[0]].mat[0]) - (wly[sel[0]][1] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[8]));
-		whl[sel[0]][2].y = (carobj[sel[0]].y - (wlx[sel[0]][1] * carobj[sel[0]].mat[1]) - (wly[sel[0]][1] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[9]));
-		whl[sel[0]][2].z = (carobj[sel[0]].z - (wlx[sel[0]][1] * carobj[sel[0]].mat[2]) - (wly[sel[0]][1] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[10]));
-		whl[sel[0]][2].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[sel[0]][2].mat[k] = carobj[sel[0]].mat[k];
-		}
-		mat4.rotate(whl[sel[0]][2].mat, whl[sel[0]][2].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
-		whl[sel[0]][3].x = (carobj[sel[0]].x + (wlx[sel[0]][1] * carobj[sel[0]].mat[0]) - (wly[sel[0]][1] * carobj[sel[0]].mat[4]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[8]));
-		whl[sel[0]][3].y = (carobj[sel[0]].y + (wlx[sel[0]][1] * carobj[sel[0]].mat[1]) - (wly[sel[0]][1] * carobj[sel[0]].mat[5]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[9]));
-		whl[sel[0]][3].z = (carobj[sel[0]].z + (wlx[sel[0]][1] * carobj[sel[0]].mat[2]) - (wly[sel[0]][1] * carobj[sel[0]].mat[6]) + (wlz[sel[0]][1] * carobj[sel[0]].mat[10]));
-		whl[sel[0]][3].mat = mat4.create();
-		for (var k = 0; k < 12; k++) {
-			whl[sel[0]][3].mat[k] = carobj[sel[0]].mat[k];
-		}
-		mat4.rotate(whl[sel[0]][3].mat, whl[sel[0]][3].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
+		updateMenuWheels(sel[0]);
 		bgst.mat = mat4.create();
 		mat4.rotate(bgst.mat, bgst.mat, (camxz * (Math.PI / 180)), [0, -1, 0]);
 		mat4.rotate(bgst.mat, bgst.mat, (camzy * (Math.PI / 180)), [-1, 0, 0]);
@@ -5643,16 +5852,17 @@ function unlockedcar() {
 }
 
 
+
 function render() {
 	var alpha = physicsAccumulator / PHYSICS_TICK_MS;
 	if (!window.smoothRendering) alpha = 1.0; 
 	if (alpha > 1.0) alpha = 1.0;
 	if (alpha < 0.0) alpha = 0.0;
 	
-	// --- FIX: Force FOV back to normal in menus! ---
+	// --- FIX: Force FOV back to normal 55 in menus! ---
 	var targetFov = window.globalFieldOfView || ((FOV * Math.PI) / 180);
 	if (typeof fase !== 'undefined' && (fase < 7 || fase > 10)) {
-		targetFov = (FOV * Math.PI) / 180;
+		targetFov = (55 * Math.PI) / 180; // Menus are ALWAYS 55 degrees!
 		window.globalFieldOfView = targetFov;
 	}
 
@@ -5663,42 +5873,68 @@ function render() {
 	camz = lerp(pcamz, bCamZ, alpha);
 	var iCamXZ = lerpAngle(pcamxz, camxz, alpha);
 	var iCamZY = lerpAngle(pcamzy, camzy, alpha);
-	var iFov = lerp(pFieldOfView, window.globalFieldOfView || (55 * Math.PI/180), alpha);
+	var iFov = lerp(pFieldOfView, targetFov, alpha);
 
 	var aspect = (canw / canh);
 	var zNear = 0.1;
-	var zFar = 100000.0;
 
-	cmat = mat4.create();
-	mat4.perspective(cmat, iFov, aspect, zNear, zFar);
-	mat4.rotate(cmat, cmat, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
-	mat4.rotate(cmat, cmat, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+	// 1. SCENERY MATRIX (Massive Render Distance for Backgrounds)
+	var cmatScenery = mat4.create();
+	mat4.perspective(cmatScenery, iFov, aspect, zNear, 150000.0);
+	mat4.rotate(cmatScenery, cmatScenery, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(cmatScenery, cmatScenery, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
 
-	window.skyCmat = mat4.create();
-	mat4.perspective(window.skyCmat, (55 * Math.PI / 180), aspect, zNear, zFar);
-	mat4.rotate(window.skyCmat, window.skyCmat, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
-	mat4.rotate(window.skyCmat, window.skyCmat, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+	// 2. STAGE MATRIX (Dynamic Performance Cutoff for Track & Cars)
+	var cmatStage = mat4.create();
+	var dynamicZFar = Math.max(7000, fogdist + 1000); 
+	mat4.perspective(cmatStage, iFov, aspect, zNear, dynamicZFar);
+	mat4.rotate(cmatStage, cmatStage, (iCamZY * (Math.PI / 180)), [1, 0, 0]);
+	mat4.rotate(cmatStage, cmatStage, (iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+	// This ensures Stage Select, Car Select, and the Post-Game screens 
+	// all safely use the 100% interpolated smooth camera matrix!
+	cmat = cmatStage; 
 
 	skydom.x = camx;
 	skydom.y = camy; 
 	skydom.z = camz;
 	skydom.mat = mat4.create(); 
-	mat4.rotate(skydom.mat, skydom.mat, (-iCamXZ * (Math.PI / 180)), [0, 1, 0]);
+	mat4.rotate(skydom.mat, skydom.mat, ((180 - iCamXZ) * (Math.PI / 180)), [0, 1, 0]);
+
+	// --- UNIVERSAL CAMERA TRACKING ---
+	// This locks the infinite base floor's X and Z to the camera across all game screens!
+	if (window.proceduralBaseFloor) {
+		window.proceduralBaseFloor.x = camx;
+		window.proceduralBaseFloor.y = 0; // World height is baked into the vertices
+		window.proceduralBaseFloor.z = camz;
+		window.proceduralBaseFloor.mat = mat4.create();
+	}
+	// ---------------------------------
 
 	if (fase == 7 || fase == 8 || fase == 9 || fase == 10) {
 		gl.clearColor(0.0, 0.0, 0.0, 1.0);
 		gl.clearDepth(1.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		
+		// --- RENDER INFINITE SCENERY ---
+		cmat = cmatScenery; // Tell drawrad3D to use the massive render distance!
+		
 		gl.disable(gl.DEPTH_TEST);
 		drawrad3D(skydom); 
-		drawrad3D(ground); 
+		if (window.proceduralBaseFloor && window.proceduralBaseFloor.loaded) drawrad3D(window.proceduralBaseFloor);
+		//drawrad3D(ground); 
 		if (window.proceduralMountains && window.proceduralMountains.loaded) drawrad3D(window.proceduralMountains);
 		if (window.proceduralClouds && window.proceduralClouds.loaded) drawrad3D(window.proceduralClouds);
 		
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
 
+		// --- RENDER PERFORMANCE-CAPPED STAGE ---
+		cmat = cmatStage; // Instantly swap to the optimized camera!
+		
+		gl.disable(gl.DEPTH_TEST);
+		drawrad3D(ground);
+		gl.enable(gl.DEPTH_TEST);
+		
 		for (var i = 0; i < nb; i++) {
 			var obj = build[obo[i].typ];
 			if (obo[i].iscp) {
@@ -5734,19 +5970,24 @@ function render() {
 		for (var i = 0; i < nchp; i++) drawrad3D(chip[i]);
 		
 		for (var c = 0; c < ncars; c++) {
-			for (var w = 0; w < 4; w++) {
-				var k = (w >= 2) ? 1 : 0;
-				var wh = whl[car[c].typ][w];
-				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-				var imat = lerpMat(wh.pmat, wh.mat, alpha);
+			var cObj = carobj[car[c].typ];
+			
+			// --- RENDER PARTICLES (Before Car) ---
+			if (!cObj.visualWheels) {
+				for (var w = 0; w < 4; w++) {
+					var k = (w >= 2) ? 1 : 0;
+					var wh = whl[car[c].typ][w];
+					var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+					var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+					var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+					var imat = lerpMat(wh.pmat, wh.mat, alpha);
 
-				if (wh.dist < 250) drawparticle(tiren[car[c].typ][k], ix, iy, iz, imat);
-				else drawparticle(tirel[car[c].typ][k], ix, iy, iz, imat);
+					if (wh.dist < 250) drawparticle(tiren[car[c].typ][k], ix, iy, iz, imat);
+					else drawparticle(tirel[car[c].typ][k], ix, iy, iz, imat);
+				}
 			}
 			
-			var cObj = carobj[car[c].typ];
+			// --- RENDER CAR BODY ---
 			var ix = lerp(car[c].px !== undefined ? car[c].px : car[c].x, car[c].x, alpha);
 			var iy = lerp(car[c].py !== undefined ? car[c].py : car[c].y, car[c].y, alpha);
 			var iz = lerp(car[c].pz !== undefined ? car[c].pz : car[c].z, car[c].z, alpha);
@@ -5755,14 +5996,29 @@ function render() {
 			drawrad3D(cObj, ix, iy, iz, imat);
 			drawDebugCollisions(cObj);
 			
-			for (var w = 0; w < 4; w++) {
-				var k = (w >= 2) ? 1 : 0;
-				var wh = whl[car[c].typ][w];
-				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-				var imat = lerpMat(wh.pmat, wh.mat, alpha);
-				drawrad3D(tired[car[c].typ][k], ix, iy, iz, imat);
+			// --- RENDER 3D WHEELS (After Car) ---
+			if (cObj.visualWheels) {
+				for (var w = 0; w < cObj.visualWheels.length; w++) {
+					var vw = cObj.visualWheels[w];
+					if (!whl[car[c].typ].legacyWheels || !whl[car[c].typ].legacyWheels[w]) continue; 
+					var lW = whl[car[c].typ].legacyWheels[w];
+					
+					var wix = lerp(lW.px !== undefined ? lW.px : lW.x, lW.x, alpha);
+					var wiy = lerp(lW.py !== undefined ? lW.py : lW.y, lW.y, alpha);
+					var wiz = lerp(lW.pz !== undefined ? lW.pz : lW.z, lW.z, alpha);
+					var wimat = lerpMat(lW.pmat, lW.mat, alpha);
+					drawrad3D(vw.mesh, wix, wiy, wiz, wimat);
+				}
+			} else {
+				for (var w = 0; w < 4; w++) {
+					var k = (w >= 2) ? 1 : 0;
+					var wh = whl[car[c].typ][w];
+					var wix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+					var wiy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+					var wiz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+					var wimat = lerpMat(wh.pmat, wh.mat, alpha);
+					drawrad3D(tired[car[c].typ][k], wix, wiy, wiz, wimat);
+				}
 			}
 		}
 		
@@ -5806,11 +6062,18 @@ function render() {
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		gl.disable(gl.DEPTH_TEST);
 		drawrad3D(bg3D);
+		
 		for (var i = 0; i < 9; i++) {
 			var ui = i; while (ui >= 3) ui -= 3;
 			sprite.texture = stexture[ui];
-			drawrad3D(sprite, smoke[i].x, smoke[i].y, smoke[i].z, smoke[i].mat);
+			var sm = smoke[i];
+			var ix = lerp(sm.px !== undefined ? sm.px : sm.x, sm.x, alpha);
+			var iy = lerp(sm.py !== undefined ? sm.py : sm.y, sm.y, alpha);
+			var iz = lerp(sm.pz !== undefined ? sm.pz : sm.z, sm.z, alpha);
+			var imat = lerpMat(sm.pmat, sm.mat, alpha);
+			drawrad3D(sprite, ix, iy, iz, imat);
 		}
+		
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
 		
@@ -5821,54 +6084,77 @@ function render() {
 		var imat = lerpMat(sObj.pmat, sObj.mat, alpha);
 		drawrad3D(sObj, ix, iy, iz, imat);
 
-		for (var w = 0; w < 4; w++) {
-			var k = (w >= 2) ? 1 : 0;
-			var wh = whl[sel[0]][w];
-			var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-			var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-			var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-			var imat = lerpMat(wh.pmat, wh.mat, alpha);
-			drawparticle(tiren[sel[0]][k], ix, iy, iz, imat);
+		var cObj = carobj[sel[0]];
+		
+		// --- RENDER PARTICLES ---
+		if (!cObj.visualWheels) {
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[sel[0]][w];
+				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var imat = lerpMat(wh.pmat, wh.mat, alpha);
+				drawparticle(tiren[sel[0]][k], ix, iy, iz, imat);
+			}
 		}
 		
-		var cObj = carobj[sel[0]];
+		// --- RENDER CAR BODY ---
 		var ix = lerp(cObj.px !== undefined ? cObj.px : cObj.x, cObj.x, alpha);
 		var iy = lerp(cObj.py !== undefined ? cObj.py : cObj.y, cObj.y, alpha);
 		var iz = lerp(cObj.pz !== undefined ? cObj.pz : cObj.z, cObj.z, alpha);
 		var imat = lerpMat(cObj.pmat, cObj.mat, alpha);
 		drawrad3D(cObj, ix, iy, iz, imat);
 		
-		for (var w = 0; w < 4; w++) {
-			var k = (w >= 2) ? 1 : 0;
-			var wh = whl[sel[0]][w];
-			var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-			var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-			var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-			var imat = lerpMat(wh.pmat, wh.mat, alpha);
-			drawrad3D(tired[sel[0]][k], ix, iy, iz, imat);
+		// --- RENDER 3D WHEELS ---
+		if (cObj.visualWheels) {
+			for (var w = 0; w < cObj.visualWheels.length; w++) {
+				var vw = cObj.visualWheels[w];
+				if (!whl[sel[0]].legacyWheels || !whl[sel[0]].legacyWheels[w]) continue; 
+				var lW = whl[sel[0]].legacyWheels[w];
+				
+				var wix = lerp(lW.px !== undefined ? lW.px : lW.x, lW.x, alpha);
+				var wiy = lerp(lW.py !== undefined ? lW.py : lW.y, lW.y, alpha);
+				var wiz = lerp(lW.pz !== undefined ? lW.pz : lW.z, lW.z, alpha);
+				var wimat = lerpMat(lW.pmat, lW.mat, alpha);
+				drawrad3D(vw.mesh, wix, wiy, wiz, wimat);
+			}
+		} else {
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[sel[0]][w];
+				var wix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var wiy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var wiz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var wimat = lerpMat(wh.pmat, wh.mat, alpha);
+				drawrad3D(tired[sel[0]][k], wix, wiy, wiz, wimat);
+			}
 		}
 	}
+	
+	
+
 
 	if (fase == 4) {
 		gl.clearColor(0.0, 0.0, 0.0, 1.0);
 		gl.clearDepth(1.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-		gl.disable(gl.DEPTH_TEST);
 		
-		// Perfectly lock the stage select background to the interpolated camera!
-		var bMat = mat4.create();
-		mat4.rotate(bMat, bMat, (iCamXZ * (Math.PI / 180)), [0, -1, 0]);
-		mat4.rotate(bMat, bMat, (iCamZY * (Math.PI / 180)), [-1, 0, 0]);
-		bMat[0] *= (aspect * 0.5625);
-		bMat[1] *= (aspect * 0.5625);
-		bMat[2] *= (aspect * 0.5625);
-		var bx = (camx - (106 * bMat[8]));
-		var by = (camy - (106 * bMat[9]));
-		var bz = (camz - (106 * bMat[10]));
-		drawparticle(bgst, bx, by, bz, bMat);
-
+		// --- RENDER INFINITE SCENERY ---
+		cmat = cmatScenery; 
+		
+		gl.disable(gl.DEPTH_TEST);
+		drawrad3D(skydom); 
+		if (window.proceduralBaseFloor && window.proceduralBaseFloor.loaded) drawrad3D(window.proceduralBaseFloor);
+		//drawrad3D(ground); 
+		if (window.proceduralMountains && window.proceduralMountains.loaded) drawrad3D(window.proceduralMountains);
+		if (window.proceduralClouds && window.proceduralClouds.loaded) drawrad3D(window.proceduralClouds);
+		
 		gl.enable(gl.DEPTH_TEST);
-		gl.depthFunc(gl.LEQUAL);
+		gl.depthFunc(gl.LEQUAL);//
+		// --- RENDER PERFORMANCE-CAPPED STAGE ---
+		cmat = cmatStage; 
+
 		if (!flkun) {
 			for (var i = 0; i < (cp.obi[(cp.n - 1)] + adod); i++) {
 				if (!obo[i]) continue;
@@ -5903,44 +6189,67 @@ function render() {
 		gl.clearColor(0.0, 0.0, 0.0, 1.0);
 		gl.clearDepth(1.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-		gl.disable(gl.DEPTH_TEST);
 		
-		// Perfectly lock the unlock screen background to the interpolated camera!
-		var bMat = mat4.create();
-		mat4.rotate(bMat, bMat, (iCamXZ * (Math.PI / 180)), [0, -1, 0]);
-		mat4.rotate(bMat, bMat, (iCamZY * (Math.PI / 180)), [-1, 0, 0]);
-		bMat[0] *= (aspect * 0.5625);
-		bMat[1] *= (aspect * 0.5625);
-		bMat[2] *= (aspect * 0.5625);
-		drawparticle(bgst, 0, 0, -90, bMat);
-
+		// --- RENDER INFINITE SCENERY ---
+		cmat = cmatScenery; 
+		
+		gl.disable(gl.DEPTH_TEST);
+		drawrad3D(skydom); 
+		if (window.proceduralBaseFloor && window.proceduralBaseFloor.loaded) drawrad3D(window.proceduralBaseFloor);
+		//drawrad3D(ground); 
+		if (window.proceduralMountains && window.proceduralMountains.loaded) drawrad3D(window.proceduralMountains);
+		if (window.proceduralClouds && window.proceduralClouds.loaded) drawrad3D(window.proceduralClouds);
+		
 		gl.enable(gl.DEPTH_TEST);
 		gl.depthFunc(gl.LEQUAL);
+		// --- RENDER PERFORMANCE-CAPPED CAR ---
+		cmat = cmatStage; 
 
 		var cObj = carobj[sel[0]];
+		
+		// --- RENDER PARTICLES ---
+		if (!cObj.visualWheels) {
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[sel[0]][w];
+				var ix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var iy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var iz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var imat = lerpMat(wh.pmat, wh.mat, alpha);
+				drawparticle(tiren[sel[0]][k], ix, iy, iz, imat);
+			}
+		}
+		
+		// --- RENDER CAR BODY ---
 		var ix = lerp(cObj.px !== undefined ? cObj.px : cObj.x, cObj.x, alpha);
 		var iy = lerp(cObj.py !== undefined ? cObj.py : cObj.y, cObj.y, alpha);
 		var iz = lerp(cObj.pz !== undefined ? cObj.pz : cObj.z, cObj.z, alpha);
 		var imat = lerpMat(cObj.pmat, cObj.mat, alpha);
-
-		for (var w = 0; w < 4; w++) {
-			var k = (w >= 2) ? 1 : 0;
-			var wh = whl[sel[0]][w];
-			var wx = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-			var wy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-			var wz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-			var wmat = lerpMat(wh.pmat, wh.mat, alpha);
-			drawparticle(tiren[sel[0]][k], wx, wy, wz, wmat);
-		}
 		drawrad3D(cObj, ix, iy, iz, imat);
-		for (var w = 0; w < 4; w++) {
-			var k = (w >= 2) ? 1 : 0;
-			var wh = whl[sel[0]][w];
-			var wx = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
-			var wy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
-			var wz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
-			var wmat = lerpMat(wh.pmat, wh.mat, alpha);
-			drawrad3D(tired[sel[0]][k], wx, wy, wz, wmat);
+		
+		// --- RENDER 3D WHEELS ---
+		if (cObj.visualWheels) {
+			for (var w = 0; w < cObj.visualWheels.length; w++) {
+				var vw = cObj.visualWheels[w];
+				if (!whl[sel[0]].legacyWheels || !whl[sel[0]].legacyWheels[w]) continue; 
+				var lW = whl[sel[0]].legacyWheels[w];
+				
+				var wix = lerp(lW.px !== undefined ? lW.px : lW.x, lW.x, alpha);
+				var wiy = lerp(lW.py !== undefined ? lW.py : lW.y, lW.y, alpha);
+				var wiz = lerp(lW.pz !== undefined ? lW.pz : lW.z, lW.z, alpha);
+				var wimat = lerpMat(lW.pmat, lW.mat, alpha);
+				drawrad3D(vw.mesh, wix, wiy, wiz, wimat);
+			}
+		} else {
+			for (var w = 0; w < 4; w++) {
+				var k = (w >= 2) ? 1 : 0;
+				var wh = whl[sel[0]][w];
+				var wix = lerp(wh.px !== undefined ? wh.px : wh.x, wh.x, alpha);
+				var wiy = lerp(wh.py !== undefined ? wh.py : wh.y, wh.y, alpha);
+				var wiz = lerp(wh.pz !== undefined ? wh.pz : wh.z, wh.z, alpha);
+				var wimat = lerpMat(wh.pmat, wh.mat, alpha);
+				drawrad3D(tired[sel[0]][k], wix, wiy, wiz, wimat);
+			}
 		}
 	}
 
@@ -5948,6 +6257,7 @@ function render() {
 	camy = bCamY;
 	camz = bCamZ;
 }
+
 
 
 function newcontrol() {
@@ -6164,7 +6474,8 @@ for (var i = 0; i < ncars; i++) {
 function inishcars() {
 	for (var i = 0; i < ncars; i++) {
 		car[i].typ = sel[i];
-		car[i].grat = (wly[car[i].typ][1] + (1.5 * wlh[car[i].typ][1]));
+		var cRad = carobj[car[i].typ];
+car[i].grat = cRad.customGrat !== undefined ? cRad.customGrat : (wly[car[i].typ][1] + (1.5 * wlh[car[i].typ][1]));
 		if (!hotStart) {
 			car[i].x = (xstart[i] + (4 * Math.random()) - 2);
 			car[i].y = car[i].grat;
@@ -7323,7 +7634,7 @@ function control() {
 					stcnt[c] = 0;
 					statusque[c] = Math.floor(20 * Math.random());
 				} else {
-					if (frgm >= m) {
+					if (frgm >= physicsMultiplier) {
 						stcnt[c]++;
 					}
 				}
@@ -7347,13 +7658,13 @@ function control() {
 							u[c].up = true;
 						} else {
 							u[c].down = true;
-							if (frgm >= m) {
+							if (frgm >= physicsMultiplier) {
 								revstart[c]--;
 							}
 						}
 					}
 					if (upcnt[c] < (25 + actwait[c])) {
-						if (frgm >= m) {
+						if (frgm >= physicsMultiplier) {
 							upcnt[c]++;
 						}
 					} else {
@@ -7924,7 +8235,7 @@ function control() {
 						turncnt[c] = 0;
 						randtcnt[c] = Math.floor(acuracy[c] * Math.random());
 					} else {
-						if (frgm >= m) {
+						if (frgm >= physicsMultiplier) {
 							turncnt[c]++;
 						}
 					}
@@ -7938,7 +8249,7 @@ function control() {
 						ad = 180;
 					}
 					pan[c] = (90 + ad + ((Math.atan(((acz - car[c].z) / (acx - car[c].x))) / 0.017453292519943295)));
-					if (frgm >= m) {
+					if (frgm >= physicsMultiplier) {
 						attack[c]--;
 					}
 					if (attack[c] <= 0) {
@@ -8809,13 +9120,13 @@ function drive() {
 									rcomp[c] -= (2 * carDefinition.airs[cn]);
 								}
 							}
-							pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * m);
+							pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * physicsMultiplier);
 							if (zyinv) {
-								car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+								car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 							} else {
-								car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+								car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 							}
-							pxy[c] += ((rcomp[c] - lcomp[c]) * m);
+							pxy[c] += ((rcomp[c] - lcomp[c]) * physicsMultiplier);
 						}
 					}
 					if ((flyingCars) || (carsCanFly) && (u[0].airShift)) {
@@ -8863,10 +9174,10 @@ function drive() {
 							if ((u[c].onlyArrowDown) && (u[c].onlyArrowUp)) {
 								ucomp[c] = 0;
 								dcomp[c] = 0;
-								speed[c] += (carDefinition.handb[cn] * m);
+								speed[c] += (carDefinition.handb[cn] * physicsMultiplier);
 							}
 							if (u[c].handb) {
-								speed[c] -= (carDefinition.handb[cn] * m);
+								speed[c] -= (carDefinition.handb[cn] * physicsMultiplier);
 							}
 							if (u[c].onlyArrowLeft) {
 								rcomp[c] = 0
@@ -8911,13 +9222,13 @@ function drive() {
 								}
 							}
 							
-							pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * m);
+							pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * physicsMultiplier);
 							if (zyinv) {
-								car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+								car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 							} else {
-								car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+								car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 							}
-							pxy[c] += ((rcomp[c] - lcomp[c]) * m);
+							pxy[c] += ((rcomp[c] - lcomp[c]) * physicsMultiplier);
 						}
 					}
 					
@@ -8929,7 +9240,7 @@ function drive() {
 				}
 				if (u[c].down) {
 					if (speed[c] > 0) {
-						speed[c] -= ((carDefinition.handb[cn] / 2) * m);
+						speed[c] -= ((carDefinition.handb[cn] / 2) * physicsMultiplier);
 					} else {
 						var sw = 0;
 						for (var i = 0; i < 2; i++) {
@@ -8938,15 +9249,15 @@ function drive() {
 							}
 						}
 						if (sw != 2) {
-							speed[c] -= (((carDefinition.acelf[cn][sw] / 2) + (upower * carDefinition.acelf[cn][sw] / 196)) * m);
+							speed[c] -= (((carDefinition.acelf[cn][sw] / 2) + (upower * carDefinition.acelf[cn][sw] / 196)) * physicsMultiplier);
 						} else {
-							speed[c] =  - (((carDefinition.swits[cn][1] / 2) + (upower * carDefinition.swits[cn][1] / 196)) * m);
+							speed[c] =  - (((carDefinition.swits[cn][1] / 2) + (upower * carDefinition.swits[cn][1] / 196)) * physicsMultiplier);
 						}
 					}
 				}
 				if (u[c].up) {
 					if (speed[c] < 0) {
-						speed[c] += (carDefinition.handb[cn] * m);
+						speed[c] += (carDefinition.handb[cn] * physicsMultiplier);
 					} else {
 						var sw = 0;
 						for (var i = 0; i < 3; i++) {
@@ -8955,7 +9266,7 @@ function drive() {
 							}
 						}
 						if (sw != 3) {
-							speed[c] += (((carDefinition.acelf[cn][sw] / 2) + (upower * carDefinition.acelf[cn][sw] / 196)) * m);
+							speed[c] += (((carDefinition.acelf[cn][sw] / 2) + (upower * carDefinition.acelf[cn][sw] / 196)) * physicsMultiplier);
 						} else {
 							speed[c] = ((carDefinition.swits[cn][2] / 2) + (upower * carDefinition.swits[cn][2] / 196));
 						}
@@ -8964,9 +9275,9 @@ function drive() {
 				if (u[c].handb) {
 					if (Math.abs(speed[c]) > carDefinition.handb[cn]) {
 						if (speed[c] < 0) {
-							speed[c] += (carDefinition.handb[cn] * m);
+							speed[c] += (carDefinition.handb[cn] * physicsMultiplier);
 						} else {
-							speed[c] -= (carDefinition.handb[cn] * m);
+							speed[c] -= (carDefinition.handb[cn] * physicsMultiplier);
 						}
 					}
 				}
@@ -9036,19 +9347,19 @@ function drive() {
 							}
 							pd[c] = false;
 						}
-						pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * m);
+						pzy[c] -= ((dcomp[c] - ucomp[c]) * mcos(pxy[c]) * physicsMultiplier);
 						if (zyinv) {
-							car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+							car[c].xz -= ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 						} else {
-							car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * m);
+							car[c].xz += ((dcomp[c] - ucomp[c]) * msin(pxy[c]) * physicsMultiplier);
 						}
-						pxy[c] += ((rcomp[c] - lcomp[c]) * m);
+						pxy[c] += ((rcomp[c] - lcomp[c]) * physicsMultiplier);
 					}
 				}
 			}
 		}
 		var wrots = (200 * speed[c] / (154 * carDefinition.simag[cn]));
-		car[c].wzy -= (wrots * m);
+		car[c].wzy -= (wrots * physicsMultiplier);
 		if (car[c].wzy < -360) {
 			car[c].wzy += 360;
 		}
@@ -9056,37 +9367,37 @@ function drive() {
 			car[c].wzy -= 360;
 		}
 		if (u[c].left) {
-			car[c].wxz -= (carDefinition.turn[cn] * m);
+			car[c].wxz -= (carDefinition.turn[cn] * physicsMultiplier);
 			if (car[c].wxz < -36) {
 				car[c].wxz = -36;
 			}
 		}
 		if (u[c].right) {
-			car[c].wxz += (carDefinition.turn[cn] * m);
+			car[c].wxz += (carDefinition.turn[cn] * physicsMultiplier);
 			if (car[c].wxz > 36) {
 				car[c].wxz = 36;
 			}
 		}
 		if ((car[c].wxz != 0) && (!u[c].left) && (!u[c].right)) {
 			if (Math.abs(speed[c]) < 1) {
-				if (Math.abs(car[c].wxz) <= m) {
+				if (Math.abs(car[c].wxz) <= physicsMultiplier) {
 					car[c].wxz = 0;
 				}
 				if (car[c].wxz > 0) {
-					car[c].wxz -= m;
+					car[c].wxz -= physicsMultiplier;
 				}
 				if (car[c].wxz < 0) {
-					car[c].wxz += m;
+					car[c].wxz += physicsMultiplier;
 				}
 			} else {
-				if (Math.abs(car[c].wxz) < (carDefinition.turn[cn] * 2 * m)) {
+				if (Math.abs(car[c].wxz) < (carDefinition.turn[cn] * 2 * physicsMultiplier)) {
 					car[c].wxz = 0;
 				}
 				if (car[c].wxz > 0) {
-					car[c].wxz -= (carDefinition.turn[cn] * 2 * m);
+					car[c].wxz -= (carDefinition.turn[cn] * 2 * physicsMultiplier);
 				}
 				if (car[c].wxz < 0) {
-					car[c].wxz += (carDefinition.turn[cn] * 2 * m);
+					car[c].wxz += (carDefinition.turn[cn] * 2 * physicsMultiplier);
 				}
 			}
 		}
@@ -9100,11 +9411,11 @@ function drive() {
 		if (wtouch[c]) {
 			if (!capsized[c]) {
 				if (!u[c].handb) {
-					fxz[c] = ((car[c].wxz / (divt * 3)) * m);
+					fxz[c] = ((car[c].wxz / (divt * 3)) * physicsMultiplier);
 				} else {
-					fxz[c] = ((car[c].wxz / divt) * m);
+					fxz[c] = ((car[c].wxz / divt) * physicsMultiplier);
 				}
-				car[c].xz += ((car[c].wxz / divt) * m);
+				car[c].xz += ((car[c].wxz / divt) * physicsMultiplier);
 			}
 			wtouch[c] = false;
 			gtouch[c] = false;
@@ -9125,10 +9436,10 @@ function drive() {
 				cxz[c] += ((mxz[c] - cxz[c]) / 4);
 			} else {
 				if (cxz[c] > mxz[c]) {
-					cxz[c] -= (10 * m);
+					cxz[c] -= (10 * physicsMultiplier);
 				}
 				if (cxz[c] < mxz[c]) {
-					cxz[c] += (10 * m);
+					cxz[c] += (10 * physicsMultiplier);
 				}
 			}
 		}
@@ -9139,7 +9450,7 @@ function drive() {
 			kx[i] = (car[c].keyx[i] + car[c].x);
 			ky[i] = (keyy + car[c].y);
 			kz[i] = (car[c].z + car[c].keyz[i]);
-			scy[c][i] -= (gravity * m); //gravity!! 
+			scy[c][i] -= (gravity * physicsMultiplier); //gravity!! 
 		}
 		rotate(kx, ky, car[c].x, car[c].y, pxy[c], 4);
 		rotate(ky, kz, car[c].y, car[c].z, pzy[c], 4);
@@ -9163,9 +9474,9 @@ function drive() {
 			}
 		}
 		for (var i = 0; i < 4; i++) {
-			ky[i] += (scy[c][i] * m);
-			kx[i] += (((scx[c][0] + scx[c][1] + scx[c][2] + scx[c][3]) / 4) * m);
-			kz[i] += (((scz[c][0] + scz[c][1] + scz[c][2] + scz[c][3]) / 4) * m);
+			ky[i] += (scy[c][i] * physicsMultiplier);
+			kx[i] += (((scx[c][0] + scx[c][1] + scx[c][2] + scx[c][3]) / 4) * physicsMultiplier);
+			kz[i] += (((scz[c][0] + scz[c][1] + scz[c][2] + scz[c][3]) / 4) * physicsMultiplier);
 		}
 		var tskd = 1;
 		var ontsprk = false;
@@ -9210,7 +9521,7 @@ function drive() {
 				if (skid[c] != 2) {
 					skid[c] = 1;
 				}
-				speed[c] -= ((speed[c] / 100) * m);
+				speed[c] -= ((speed[c] / 100) * physicsMultiplier);
 			} else {
 				if (skid[c] == 1) {
 					skid[c] = 2;
@@ -9232,17 +9543,17 @@ function drive() {
 					motory = 0;
 					ugrip = (carDefinition.grip[cn] / 5);
 					if (speed[c] > 0) {
-						speed[c] -= (0.2 * m);
+						speed[c] -= (0.2 * physicsMultiplier);
 					} else {
-						speed[c] += (0.2 * m);
+						speed[c] += (0.2 * physicsMultiplier);
 					}
 				}
 			}
 			if (Math.abs(speed[c]) > drag) {
 				if (speed[c] > 0) {
-					speed[c] -= (drag * m);
+					speed[c] -= (drag * physicsMultiplier);
 				} else {
-					speed[c] += (drag * m);
+					speed[c] += (drag * physicsMultiplier);
 				}
 			} else {
 				speed[c] = 0;
@@ -9258,34 +9569,34 @@ function drive() {
 			var avcx = 0,
 			avcz = 0;
 			for (var i = 0; i < 4; i++) {
-				if (Math.abs(scx[c][i] - motorx) > (ugrip * m)) {
+				if (Math.abs(scx[c][i] - motorx) > (ugrip * physicsMultiplier)) {
 					if (scx[c][i] < motorx) {
-						scx[c][i] += (ugrip * m);
+						scx[c][i] += (ugrip * physicsMultiplier);
 					} else {
-						scx[c][i] -= (ugrip * m);
+						scx[c][i] -= (ugrip * physicsMultiplier);
 					}
 				} else {
 					scx[c][i] = motorx;
 				}
-				if (Math.abs(scz[c][i] - motorz) > (ugrip * m)) {
+				if (Math.abs(scz[c][i] - motorz) > (ugrip * physicsMultiplier)) {
 					if (scz[c][i] < motorz) {
-						scz[c][i] += (ugrip * m);
+						scz[c][i] += (ugrip * physicsMultiplier);
 					} else {
-						scz[c][i] -= (ugrip * m);
+						scz[c][i] -= (ugrip * physicsMultiplier);
 					}
 				} else {
 					scz[c][i] = motorz;
 				}
-				if (Math.abs(scy[c][i] - motory) > (ugrip * m)) {
+				if (Math.abs(scy[c][i] - motory) > (ugrip * physicsMultiplier)) {
 					if (scy[c][i] < motory) {
-						scy[c][i] += (ugrip * m);
+						scy[c][i] += (ugrip * physicsMultiplier);
 					} else {
-						scy[c][i] -= (ugrip * m);
+						scy[c][i] -= (ugrip * physicsMultiplier);
 					}
 				} else {
 					scy[c][i] = motory;
 				}
-				if (frgm >= m) {
+				if (frgm >= physicsMultiplier) {
 					if (ugrip < carDefinition.grip[cn]) {
 						if (txz[c] != car[c].xz) {
 							dcnt[c]++;
@@ -9575,7 +9886,7 @@ function drive() {
 													}
 												}
 												kz[k] = (colz + zboundr);
-												if (frgm >= m) {
+												if (frgm >= physicsMultiplier) {
 													crank[c][k]++;
 													if (crank[c][k] > 2) {
 														sprks(cn, kx[k], ky[k], (kz[k] - zboundr), scx[c][k], scy[c][k], scz[c][k], 2);
@@ -9616,7 +9927,7 @@ function drive() {
 													}
 												}
 												kz[k] = (colz - zboundr);
-												if (frgm >= m) {
+												if (frgm >= physicsMultiplier) {
 													crank[c][k]++;
 													if (crank[c][k] > 2) {
 														sprks(cn, kx[k], ky[k], (kz[k] + zboundr), scx[c][k], scy[c][k], scz[c][k], 2);
@@ -9685,7 +9996,7 @@ function drive() {
 													}
 												}
 												kx[k] = (colx + xboundr);
-												if (frgm >= m) {
+												if (frgm >= physicsMultiplier) {
 													crank[c][k]++;
 													if (crank[c][k] > 2) {
 														sprks(cn, (kx[k] - xboundr), ky[k], kz[k], scx[c][k], scy[c][k], scz[c][k], 2);
@@ -9726,7 +10037,7 @@ function drive() {
 													}
 												}
 												kx[k] = (colx - xboundr);
-												if (frgm >= m) {
+												if (frgm >= physicsMultiplier) {
 													crank[c][k]++;
 													if (crank[c][k] > 2) {
 														sprks(cn, (kx[k] + xboundr), ky[k], kz[k], scx[c][k], scy[c][k], scz[c][k], 2);
@@ -9908,7 +10219,7 @@ function drive() {
 												if (arct < 1) {
 													arct = 1;
 												}
-												var difco = ((coly - ky[k]) / (arct * m));
+												var difco = ((coly - ky[k]) / (arct * physicsMultiplier));
 												scy[c][k] += difco;
 												ky[k] = coly;
 												if (difco > 0) {
@@ -9979,7 +10290,7 @@ function drive() {
 				}
 			}
 		}
-		if (frgm >= m) {
+		if (frgm >= physicsMultiplier) {
 			var allsparks = 0;
 			for (var k = 0; k < 4; k++) {
 				if (sprkon[k] == 1) {
@@ -10021,7 +10332,7 @@ function drive() {
 					}
 				}
 				kz[k] = (limb + zboundr);
-				if ((frgm >= m) && (ky[k] < 20)) {
+				if ((frgm >= physicsMultiplier) && (ky[k] < 20)) {
 					crank[c][k]++;
 					if (crank[c][k] > 2) {
 						sprks(cn, kx[k], ky[k], (kz[k] - zboundr), scx[c][k], scy[c][k], scz[c][k], 2);
@@ -10059,7 +10370,7 @@ function drive() {
 					}
 				}
 				kz[k] = (limt - zboundr);
-				if ((frgm >= m) && (ky[k] < 20)) {
+				if ((frgm >= physicsMultiplier) && (ky[k] < 20)) {
 					crank[c][k]++;
 					if (crank[c][k] > 2) {
 						sprks(cn, kx[k], ky[k], (kz[k] + zboundr), scx[c][k], scy[c][k], scz[c][k], 2);
@@ -10097,7 +10408,7 @@ function drive() {
 					}
 				}
 				kx[k] = (limr + xboundr);
-				if ((frgm >= m) && (ky[k] < 20)) {
+				if ((frgm >= physicsMultiplier) && (ky[k] < 20)) {
 					crank[c][k]++;
 					if (crank[c][k] > 2) {
 						sprks(cn, (kx[k] - xboundr), ky[k], kz[k], scx[c][k], scy[c][k], scz[c][k], 2);
@@ -10135,7 +10446,7 @@ function drive() {
 					}
 				}
 				kx[k] = (liml - xboundr);
-				if ((frgm >= m) && (ky[k] < 20)) {
+				if ((frgm >= physicsMultiplier) && (ky[k] < 20)) {
 					crank[c][k]++;
 					if (crank[c][k] > 2) {
 						sprks(cn, (kx[k] + xboundr), ky[k], kz[k], scx[c][k], scy[c][k], scz[c][k], 2);
@@ -10165,7 +10476,7 @@ function drive() {
 				wall[c] = limlo;
 			}
 		}
-		if (frgm >= m) {
+		if (frgm >= physicsMultiplier) {
 			for (var i = 0; i < 4; i++) {
 				if (crank[c][i] == lcrank[c][i]) {
 					crank[c][i][k] = 0;
@@ -10286,13 +10597,13 @@ function drive() {
 					var diffPzy = targetPzy - pzy[c];
 					var diffPxy = targetPxy - pxy[c];
 
-					var maxSnap = 15.0 * m; 
+					var maxSnap = 15.0 * physicsMultiplier; 
 					if (diffPzy > maxSnap) diffPzy = maxSnap;
 					if (diffPzy < -maxSnap) diffPzy = -maxSnap;
 					if (diffPxy > maxSnap) diffPxy = maxSnap;
 					if (diffPxy < -maxSnap) diffPxy = -maxSnap;
 
-					var smoothRate = 0.65 * m; 
+					var smoothRate = 0.65 * physicsMultiplier; 
 					if (smoothRate > 1.0) smoothRate = 1.0;
 
 					// Modern physics directly applies rotation here
@@ -10346,7 +10657,7 @@ function drive() {
 				nmlt[c] = -1;
 			}
 		}
-		car[c].xz += (forca[c] * 10 * m * ((scz[c][0] * nmlt[c]) - (scz[c][1] * pmlt[c]) + (scz[c][2] * pmlt[c]) - (scz[c][3] * nmlt[c]) + (scx[c][0] * pmlt[c]) + (scx[c][1] * nmlt[c]) - (scx[c][2] * nmlt[c]) - (scx[c][3] * pmlt[c])));
+		car[c].xz += (forca[c] * 10 * physicsMultiplier * ((scz[c][0] * nmlt[c]) - (scz[c][1] * pmlt[c]) + (scz[c][2] * pmlt[c]) - (scz[c][3] * nmlt[c]) + (scx[c][0] * pmlt[c]) + (scx[c][1] * nmlt[c]) - (scx[c][2] * nmlt[c]) - (scx[c][3] * pmlt[c])));
 		if (Math.abs(nzyr) > Math.abs(nzy)) {
 			nzy = nzyr;
 		}
@@ -10354,14 +10665,14 @@ function drive() {
 			nxy = nxyr;
 		}
 		if (!zyinv) {
-			pzy[c] += (nzy * m);
+			pzy[c] += (nzy * physicsMultiplier);
 		} else {
-			pzy[c] -= (nzy * m);
+			pzy[c] -= (nzy * physicsMultiplier);
 		}
 		if (!xyinv) {
-			pxy[c] += (nxy * m);
+			pxy[c] += (nxy * physicsMultiplier);
 		} else {
-			pxy[c] -= (nxy * m);
+			pxy[c] -= (nxy * physicsMultiplier);
 		}
 		if (ntr == 4) {
 			var tat = 0;
@@ -10405,7 +10716,7 @@ function drive() {
 				carIsGrounded[c] = true;
 			}
 		}
-		if (frgm >= m) {
+		if (frgm >= physicsMultiplier) {
 			if ((!carIsGrounded[c]) && (wtouch[c])) {
 				if (cntouch[c] == 10) {
 					carIsGrounded[c] = true;
@@ -10416,29 +10727,29 @@ function drive() {
 				cntouch[c] = 0;
 			}
 		}
-		car[c].y = (((ky[0] + ky[1] + ky[2] + ky[3]) / 4) - (keyy * mcos(pzy[c]) * mcos(pxy[c])) + (ytrim * m));
+		car[c].y = (((ky[0] + ky[1] + ky[2] + ky[3]) / 4) - (keyy * mcos(pzy[c]) * mcos(pxy[c])) + (ytrim * physicsMultiplier));
 		if (zyinv) {
 			mlt = -1;
 		} else {
 			mlt = 1;
 		}
-		car[c].x = (((kx[0] - (car[c].keyx[0] * mcos(car[c].xz)) + (mlt * car[c].keyz[0] * msin(car[c].xz)) + kx[1] - (car[c].keyx[1] * mcos(car[c].xz)) + (mlt * car[c].keyz[1] * msin(car[c].xz)) + kx[2] - (car[c].keyx[2] * mcos(car[c].xz)) + (mlt * car[c].keyz[2] * msin(car[c].xz)) + kx[3] - (car[c].keyx[3] * mcos(car[c].xz)) + (mlt * car[c].keyz[3] * msin(car[c].xz))) / 4) + (keyy * msin(pxy[c]) * mcos(car[c].xz)) - (keyy * msin(pzy[c]) * msin(car[c].xz)) + (xtrim * m));
-		car[c].z = (((kz[0] - (mlt * car[c].keyz[0] * mcos(car[c].xz)) - (car[c].keyx[0] * msin(car[c].xz)) + kz[1] - (mlt * car[c].keyz[1] * mcos(car[c].xz)) - (car[c].keyx[1] * msin(car[c].xz)) + kz[2] - (mlt * car[c].keyz[2] * mcos(car[c].xz)) - (car[c].keyx[2] * msin(car[c].xz)) + kz[3] - (mlt * car[c].keyz[3] * mcos(car[c].xz)) - (car[c].keyx[3] * msin(car[c].xz))) / 4) + (keyy * msin(pxy[c]) * msin(car[c].xz)) - (keyy * msin(pzy[c]) * mcos(car[c].xz)) + (ztrim * m));
+		car[c].x = (((kx[0] - (car[c].keyx[0] * mcos(car[c].xz)) + (mlt * car[c].keyz[0] * msin(car[c].xz)) + kx[1] - (car[c].keyx[1] * mcos(car[c].xz)) + (mlt * car[c].keyz[1] * msin(car[c].xz)) + kx[2] - (car[c].keyx[2] * mcos(car[c].xz)) + (mlt * car[c].keyz[2] * msin(car[c].xz)) + kx[3] - (car[c].keyx[3] * mcos(car[c].xz)) + (mlt * car[c].keyz[3] * msin(car[c].xz))) / 4) + (keyy * msin(pxy[c]) * mcos(car[c].xz)) - (keyy * msin(pzy[c]) * msin(car[c].xz)) + (xtrim * physicsMultiplier));
+		car[c].z = (((kz[0] - (mlt * car[c].keyz[0] * mcos(car[c].xz)) - (car[c].keyx[0] * msin(car[c].xz)) + kz[1] - (mlt * car[c].keyz[1] * mcos(car[c].xz)) - (car[c].keyx[1] * msin(car[c].xz)) + kz[2] - (mlt * car[c].keyz[2] * mcos(car[c].xz)) - (car[c].keyx[2] * msin(car[c].xz)) + kz[3] - (mlt * car[c].keyz[3] * mcos(car[c].xz)) - (car[c].keyx[3] * msin(car[c].xz))) / 4) + (keyy * msin(pxy[c]) * msin(car[c].xz)) - (keyy * msin(pzy[c]) * mcos(car[c].xz)) + (ztrim * physicsMultiplier));
 		if ((Math.abs(speed[c]) > 10) || (!carIsGrounded[c])) {
-			if (Math.abs(pxy[c] - car[c].xy) >= (4 * m)) {
+			if (Math.abs(pxy[c] - car[c].xy) >= (4 * physicsMultiplier)) {
 				if (pxy[c] > car[c].xy) {
-					car[c].xy += ((2 * m) + ((pxy[c] - car[c].xy) / 2));
+					car[c].xy += ((2 * physicsMultiplier) + ((pxy[c] - car[c].xy) / 2));
 				} else {
-					car[c].xy -= ((2 * m) + ((car[c].xy - pxy[c]) / 2));
+					car[c].xy -= ((2 * physicsMultiplier) + ((car[c].xy - pxy[c]) / 2));
 				}
 			} else {
 				car[c].xy = pxy[c];
 			}
-			if (Math.abs(pzy[c] - car[c].zy) >= (4 * m)) {
+			if (Math.abs(pzy[c] - car[c].zy) >= (4 * physicsMultiplier)) {
 				if (pzy[c] > car[c].zy) {
-					car[c].zy += ((2 * m) + ((pzy[c] - car[c].zy) / 2));
+					car[c].zy += ((2 * physicsMultiplier) + ((pzy[c] - car[c].zy) / 2));
 				} else {
-					car[c].zy -= ((2 * m) + ((car[c].zy - pzy[c]) / 2));
+					car[c].zy -= ((2 * physicsMultiplier) + ((car[c].zy - pzy[c]) / 2));
 				}
 			} else {
 				car[c].zy = pzy[c];
@@ -10447,10 +10758,10 @@ function drive() {
 		if ((wtouch[c]) && (!capsized[c])) {
 			var mtilt = ((speed[c] / carDefinition.swits[cn][2]) * 14 * (carDefinition.bounce[cn] - 0.4));
 			if ((u[c].left) && (tilt[c] < mtilt) && (tilt[c] >= 0)) {
-				tilt[c] += (0.4 * m);
+				tilt[c] += (0.4 * physicsMultiplier);
 			} else {
 				if ((u[c].right) && (tilt[c] > -mtilt) && (tilt[c] <= 0)) {
-					tilt[c] -= (0.4 * m);
+					tilt[c] -= (0.4 * physicsMultiplier);
 				} else {
 					if (Math.abs(tilt[c]) > (3 * (carDefinition.bounce[cn] - 0.4))) {
 						if (tilt[c] > 0) {
@@ -10465,14 +10776,14 @@ function drive() {
 			}
 			car[c].xy += tilt[c];
 			if (gtouch[c]) {
-				car[c].y -= ((Math.abs(tilt[c]) / 30) * m);
+				car[c].y -= ((Math.abs(tilt[c]) / 30) * physicsMultiplier);
 			}
 		} else {
 			if (tilt[c] != 0) {
 				tilt[c] = 0;
 			}
 		}
-		if (frgm >= m) {
+		if (frgm >= physicsMultiplier) {
 			if ((carIsGrounded[c]) && (tskd == 2)) {
 				car[c].zy += (((Math.random() * 5 * speed[c] / carDefinition.swits[cn][2]) - (2.5 * speed[c] / carDefinition.swits[cn][2])) * (carDefinition.bounce[cn] - 0.3));
 				car[c].xy += (((Math.random() * 5 * speed[c] / carDefinition.swits[cn][2]) - (2.5 * speed[c] / carDefinition.swits[cn][2])) * (carDefinition.bounce[cn] - 0.3));
@@ -10482,7 +10793,7 @@ function drive() {
 				car[c].xy += (((Math.random() * 3.34 * speed[c] / carDefinition.swits[cn][2]) - (1.67 * speed[c] / carDefinition.swits[cn][2])) * (carDefinition.bounce[cn] - 0.3));
 			}
 		}
-		if (frgm >= m) {
+		if (frgm >= physicsMultiplier) {
 			if (hitmag[c] >= carDefinition.maxmag[cn]) {
 				if (repcar[c].destat == 700) {
 					repcar[c].destat = 430;
@@ -10690,7 +11001,7 @@ function drive() {
 					}
 				}
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				if (car[c].fcnt == 20) {
 					squash[c] = 0;
 					nbsq[c] = 0;
@@ -10713,11 +11024,11 @@ function drive() {
 				lxz[c] = car[c].xz;
 			}
 			if (loop[c] == 2 || loop[c] == -1) {
-				travxy[c] += ((rcomp[c] - lcomp[c]) * m);
+				travxy[c] += ((rcomp[c] - lcomp[c]) * physicsMultiplier);
 				if (Math.abs(travxy[c]) > 135) {
 					rtab[c] = true;
 				}
-				travzy[c] += ((ucomp[c] - dcomp[c]) * m);
+				travzy[c] += ((ucomp[c] - dcomp[c]) * physicsMultiplier);
 				if (travzy[c] > 135) {
 					ftab[c] = true;
 				}
@@ -10729,7 +11040,7 @@ function drive() {
 				travxz[c] += (lxz[c] - car[c].xz);
 				lxz[c] = car[c].xz;
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				if (srfcnt[c] < 10) {
 					if (uwall[c]) {
 						surfer[c] = true;
@@ -10743,7 +11054,7 @@ function drive() {
 					if (capcnt[c] != 0) {
 						capcnt[c] = 0;
 					}
-					if ((gtouch[c]) && (frgm >= m)) {
+					if ((gtouch[c]) && (frgm >= physicsMultiplier)) {
 						if (trcnt[c] != 0) {
 							if (trcnt[c] == 9) {
 								powerup[c] = 0;
@@ -10855,7 +11166,7 @@ function drive() {
 							capcnt[c] = 1;
 						}
 					} else {
-						if (frgm >= m) {
+						if (frgm >= physicsMultiplier) {
 							capcnt[c]++;
 							if (capcnt[c] == capto) {
 								speed[c] = 0;
@@ -10898,7 +11209,7 @@ function drive() {
 		if (uwall[c]) {
 			uwall[c] = false;
 		}
-		if ((frgm >= m) && (c != 0) && (lastcolido[c] != 0) && (!dest[c])) {
+		if ((frgm >= physicsMultiplier) && (c != 0) && (lastcolido[c] != 0) && (!dest[c])) {
 			lastcolido[c]--;
 		}
 		if (dest[c]) {
@@ -11611,7 +11922,6 @@ var gpress = [0, 0, 0, 0, 0, 0, 0, 0];
 var gparr = false;
 var needrotate = false;
 var totime = 0, nfr = 0, actat = 20, ltime = -1;
-var m = 0.75; // physics speed!
 /*var m = 0.7 (default) 0.75;*/
 var frgm = 0;
 var canw = 1280, canh = 720, tcanh = 720;
@@ -11622,7 +11932,8 @@ var fase = 0;
 // --- MASTER LOOP & LERP UTILITIES ---
 var physicsAccumulator = 0;
 var lastFrameTime = performance.now();
-var PHYSICS_TICK_MS = 35; // 35ms matches the original timing for m = 0.7
+var physicsMultiplier = 0.75; // physics speed!
+var PHYSICS_TICK_MS = 50 * physicsMultiplier; // Automatically perfectly synced!
 var engineStarted = false;
 
 var pcamx = 0, pcamy = 0, pcamz = 0;
@@ -11644,7 +11955,53 @@ function lerpMat(a, b, t) {
 	return _tempMat;
 }
 
+// --- MASTER LOOP & LERP UTILITIES ---
+//window.smoothRendering = false;
+//window.targetFPS = 60; // Set to 60, 144, 30, etc. Set to 0 to uncap (monitor refresh rate).
+window.useExtrapolation = false; // Keep false! Extrapolation reduces delay but causes physics jitter.
+window.targetFPS = 0; 
+window.showFPS = true;
 
+var physicsAccumulator = 0;
+var lastFrameTime = performance.now();
+var lastRenderTime = performance.now();
+var engineStarted = false;
+
+// --- NEW FPS TRACKING VARIABLES ---
+var fpsFrameCount = 0;
+var fpsLastTime = performance.now();
+var currentFPS = 0;
+
+var pcamx = 0, pcamy = 0, pcamz = 0;
+var pcamxz = 0, pcamzy = 0;
+var pFieldOfView = (55 * Math.PI) / 180;
+window.globalFieldOfView = (55 * Math.PI) / 180;
+
+function lerp(a, b, t) { 
+	if (!window.smoothRendering) return b; // 100% Raw State
+	if (window.useExtrapolation) return b + (b - a) * t; 
+	return a + (b - a) * t; 
+}
+
+function lerpAngle(a, b, t) {
+	if (!window.smoothRendering) return b; // 100% Raw State
+	var d = b - a;
+	while (d > 180) d -= 360;
+	while (d < -180) d += 360;
+	if (window.useExtrapolation) return b + d * t;
+	return a + d * t;
+}
+
+var _tempMat = new Float32Array(16);
+function lerpMat(a, b, t) {
+	if (!b) return a;
+	if (!window.smoothRendering || !a) return b; // 100% Raw State
+	for (var i = 0; i < 16; i++) {
+		if (window.useExtrapolation) _tempMat[i] = b[i] + (b[i] - a[i]) * t;
+		else _tempMat[i] = a[i] + (b[i] - a[i]) * t;
+	}
+	return _tempMat;
+}
 
 function savePreviousStates() {
 	// 1. Always save the camera
@@ -11666,16 +12023,29 @@ function savePreviousStates() {
 		}
 	}
 	
-	// 4. Cache ALL 19 Sets of Wheels (Crucial for Car Select!)
+	// 4. Cache ALL 19 Sets of Wheels (Crucial for Car Select & Interpolation!)
 	if (typeof whl !== 'undefined') {
 		for (var i = 0; i < 19; i++) {
 			if (!whl[i]) continue;
+			
+			// Cache standard 4 wheels
 			for (var w = 0; w < 4; w++) {
 				var wh = whl[i][w];
 				if (!wh) continue;
 				wh.px = wh.x; wh.py = wh.y; wh.pz = wh.z;
 				if (!wh.pmat) wh.pmat = new Float32Array(16);
 				if (wh.mat) for (var j=0; j<16; j++) wh.pmat[j] = wh.mat[j];
+			}
+			
+			// Cache dynamic legacy wheels if they exist
+			if (whl[i].legacyWheels) {
+				for (var v = 0; v < whl[i].legacyWheels.length; v++) {
+					var lW = whl[i].legacyWheels[v];
+					if (!lW) continue;
+					lW.px = lW.x; lW.py = lW.y; lW.pz = lW.z;
+					if (!lW.pmat) lW.pmat = new Float32Array(16);
+					if (lW.mat) for (var j=0; j<16; j++) lW.pmat[j] = lW.mat[j];
+				}
 			}
 		}
 	}
@@ -11715,37 +12085,6 @@ function savePreviousStates() {
 	}
 }
 
-
-
-// --- MASTER LOOP & LERP UTILITIES ---
-//window.smoothRendering = false;
-//window.targetFPS = 60; // Set to 60, 144, 30, etc. Set to 0 to uncap (monitor refresh rate).
-
-var physicsAccumulator = 0;
-var lastFrameTime = performance.now();
-var lastRenderTime = performance.now();
-var PHYSICS_TICK_MS = 35; // 35ms matches the original timing for m = 0.7
-var engineStarted = false;
-
-var pcamx = 0, pcamy = 0, pcamz = 0;
-var pcamxz = 0, pcamzy = 0;
-var pFieldOfView = (55 * Math.PI) / 180;
-window.globalFieldOfView = (55 * Math.PI) / 180;
-
-function lerp(a, b, t) { return a + (b - a) * t; }
-function lerpAngle(a, b, t) {
-	var d = b - a;
-	while (d > 180) d -= 360;
-	while (d < -180) d += 360;
-	return a + d * t;
-}
-var _tempMat = new Float32Array(16);
-function lerpMat(a, b, t) {
-	if (!a || !b) return b;
-	for (var i = 0; i < 16; i++) _tempMat[i] = a[i] + (b[i] - a[i]) * t;
-	return _tempMat;
-}
-
 function mainEngineLoop(currentTime) {
 	requestAnimationFrame(mainEngineLoop);
 
@@ -11753,42 +12092,115 @@ function mainEngineLoop(currentTime) {
 	var dt = currentTime - lastFrameTime;
 	lastFrameTime = currentTime;
 
-	if (dt > 250) dt = 250; // Cap delta time if tab is minimized
+	if (dt > 250) dt = 250; 
+
+	// --- 1. UNCAPPED INPUT & WINDOW POLLING ---
+	if (canw != window.innerWidth || tcanh != window.innerHeight) {
+		canw = window.innerWidth; canh = window.innerHeight; tcanh = canh;
+		if (canh > canw) { canh = canw; needrotate = true; } else { needrotate = false; }
+		mw = (canw / 1280); mh = (canh / 720); avm = ((mw + mh) / 2); adm = (((canw / canh) - 1.777) * 76);
+		canvas3D.width = canw; canvas3D.height = canh;
+		canvas3D.style.width = "" + canw + "px"; canvas3D.style.height = "" + canh + "px";
+		canvas2D.width = canw; canvas2D.height = tcanh;
+		canvas2D.style.width = "" + canw + "px"; canvas2D.style.height = "" + tcanh + "px";
+		gl.viewport(0, 0, canw, canh);
+		gofullscreen = false;
+	}
+
+	if (gotgamepad) {
+		var gp = navigator.getGamepads();
+		for (var i = 0; i < gp.length; i++) {
+			if (gpress[i] == null) gpress[i] = 0;
+			if (gp[i] != null && gp[i].connected) {
+				var aleft = false, aright = false, aup = false, adown = false;
+				if (Math.abs(gp[i].axes[0]) > 0.1) { if (gp[i].axes[0] < 0) aleft = true; else aright = true; }
+				if (Math.abs(gp[i].axes[2]) > 0.1) { if (gp[i].axes[2] < 0) aleft = true; else aright = true; }
+				if (Math.abs(gp[i].axes[1]) > 0.1) { if (gp[i].axes[1] < 0) aup = true; else adown = true; }
+				if (Math.abs(gp[i].axes[3]) > 0.1) { if (gp[i].axes[3] < 0) aup = true; else adown = true; }
+				
+				if (gp[i].buttons[0].pressed || aup) { u[0].up = true; gpress[i] = 10; } else if (gpress[i]) u[0].up = false;
+				if (gp[i].buttons[2].pressed || adown) { u[0].down = true; gpress[i] = 10; } else if (gpress[i]) u[0].down = false;
+				if (gp[i].buttons[3].pressed || aleft) { u[0].left = true; gpress[i] = 10; } else if (gpress[i]) u[0].left = false;
+				if (gp[i].buttons[1].pressed || aright) { u[0].right = true; gpress[i] = 10; } else if (gpress[i]) u[0].right = false;
+				
+				if (gp[i].buttons.length > 7) {
+					if (gp[i].buttons[4].pressed) { if (!gparr) { u[0].arrace = !u[0].arrace; gparr = true; } gpress[i] = 10; } else if (gpress[i]) gparr = false;
+					if (gp[i].buttons[5].pressed) { u[0].handb = true; gpress[i] = 10; } else if (gpress[i]) u[0].handb = false;
+					if (gp[i].buttons[6].pressed) { lookback = -1; gpress[i] = 10; } else if (gpress[i] && lookback == -1) lookback = 0;
+					if (gp[i].buttons[7].pressed) { lookback = 1; gpress[i] = 10; } else if (gpress[i] && lookback == 1) lookback = 0;
+				}
+				var penter = false;
+				for (var k = 8; k < gp[i].buttons.length; k++) if (gp[i].buttons[k].pressed) penter = true;
+				if (penter) { if (!enter) enter = 1; gpress[i] = 10; } else if (gpress[i] && enter) enter = 0;
+				if (gpress[i]) gpress[i]--;
+			}
+		}
+	}
+	// ------------------------------------------
 
 	physicsAccumulator += dt;
-	var didLogicTick = false;
 
-	// 1. Fixed Time Step Logic (Always runs accurately, ignoring the FPS cap)
+	// --- 2. FIXED LOGIC STEP ---
 	while (physicsAccumulator >= PHYSICS_TICK_MS) {
 		doGameTick(); 
 		physicsAccumulator -= PHYSICS_TICK_MS;
-		didLogicTick = true;
-	}
-
-	// 2. Classic Rendering Optimization
-	if (!window.smoothRendering && !didLogicTick) {
-		return; 
-	}
-
-	// 3. FPS Limiter (Only applies if smooth rendering is ON, as classic is already 28.5 FPS)
-	if (window.smoothRendering && window.targetFPS > 0) {
-		var renderInterval = 1000.0 / window.targetFPS;
-		var dtRender = currentTime - lastRenderTime;
 		
-		// If not enough time has passed to render the next frame, skip drawing!
-		if (dtRender < renderInterval) {
-			return;
+		// TETHERED CLASSIC RENDERING
+		// Forces 1 render per logic tick, allowing FPS to match TPS indefinitely!
+		if (!window.smoothRendering) {
+			render();
+			updateFPSCounter(currentTime);
 		}
-		
-		// Adjust the lastRenderTime by the remainder to prevent micro-stutters over time
-		lastRenderTime = currentTime - (dtRender % renderInterval);
-	} else {
-		// If uncapped (0) or classic, just track the time naturally
-		lastRenderTime = currentTime;
 	}
 
-	// 4. Render the Frame
-	render(); 
+	// --- 3. DECOUPLED SMOOTH RENDERING ---
+	// If smooth rendering is ON, we ignore the logic rate and render at the display's native rate
+	if (window.smoothRendering) {
+		if (window.targetFPS > 0) {
+			var renderInterval = 1000.0 / window.targetFPS;
+			var dtRender = currentTime - lastRenderTime;
+			if (dtRender < renderInterval) return;
+			lastRenderTime = currentTime - (dtRender % renderInterval);
+		} else {
+			lastRenderTime = currentTime;
+		}
+
+		render(); 
+		updateFPSCounter(currentTime);
+	}
+}
+
+function updateFPSCounter(currentTime) {
+	if (window.showFPS) {
+		fpsFrameCount++;
+		if (currentTime - fpsLastTime >= 1000) {
+			currentFPS = fpsFrameCount;
+			fpsFrameCount = 0;
+			fpsLastTime = currentTime;
+			
+			var fpsDiv = document.getElementById("nfmFpsCounter");
+			if (!fpsDiv) {
+				fpsDiv = document.createElement("div");
+				fpsDiv.id = "nfmFpsCounter";
+				fpsDiv.style.position = "absolute";
+				fpsDiv.style.top = "10px";
+				fpsDiv.style.left = "10px";
+				fpsDiv.style.color = "#00FF00";
+				fpsDiv.style.fontFamily = "monospace";
+				fpsDiv.style.fontSize = "24px";
+				fpsDiv.style.fontWeight = "bold";
+				fpsDiv.style.textShadow = "2px 2px 0px #000";
+				fpsDiv.style.zIndex = "9999";
+				fpsDiv.style.pointerEvents = "none";
+				document.body.appendChild(fpsDiv);
+			}
+			fpsDiv.style.display = "block";
+			fpsDiv.innerText = currentFPS + " FPS";
+		}
+	} else {
+		var fpsDiv = document.getElementById("nfmFpsCounter");
+		if (fpsDiv) fpsDiv.style.display = "none";
+	}
 }
 
 
@@ -11799,173 +12211,8 @@ if (!engineStarted) {
 }
 
 function doGameTick() {
-	savePreviousStates();
-	if (canw != window.innerWidth || tcanh != window.innerHeight) {
-		canw = window.innerWidth;
-		canh = window.innerHeight;
-		tcanh = canh;
-		if (canh > canw) {
-			canh = canw;
-			needrotate = true;
-		} else {
-			needrotate = false;
-		}
-		mw = (canw / 1280);
-		mh = (canh / 720);
-		avm = ((mw + mh) / 2);
-		adm = (((canw / canh) - 1.777) * 76);
-		canvas3D.width = canw;
-		canvas3D.height = canh;
-		canvas3D.style.width = "" + canw + "px";
-		canvas3D.style.height = "" + canh + "px";
-		canvas2D.width = canw;
-		canvas2D.height = tcanh;
-		canvas2D.style.width = "" + canw + "px";
-		canvas2D.style.height = "" + tcanh + "px";
-		gl.viewport(0, 0, canw, canh);
-		gofullscreen = false;
-	}
-	if (gotgamepad) {
-		var gp = navigator.getGamepads();
-		for (var i = 0; i < gp.length; i++) {
-			if (gpress[i] == null) {
-				gpress[i] = 0;
-			}
-			if (gp[i] != null) {
-				if (gp[i].connected) {
-					var aleft = false,
-					aright = false;
-					if (Math.abs(gp[i].axes[0]) > 0.1) {
-						if (gp[i].axes[0] < 0) {
-							aleft = true;
-						} else {
-							aright = true;
-						}
-					}
-					if (Math.abs(gp[i].axes[2]) > 0.1) {
-						if (gp[i].axes[2] < 0) {
-							aleft = true;
-						} else {
-							aright = true;
-						}
-					}
-					var aup = false,
-					adown = false;
-					if (Math.abs(gp[i].axes[1]) > 0.1) {
-						if (gp[i].axes[1] < 0) {
-							aup = true;
-						} else {
-							adown = true;
-						}
-					}
-					if (Math.abs(gp[i].axes[3]) > 0.1) {
-						if (gp[i].axes[3] < 0) {
-							aup = true;
-						} else {
-							adown = true;
-						}
-					}
-					if (gp[i].buttons[0].pressed || aup) {
-						u[0].up = true;
-						gpress[i] = 10;
-					} else {
-						if (gpress[i]) {
-							u[0].up = false;
-						}
-					}
-					if (gp[i].buttons[2].pressed || adown) {
-						u[0].down = true;
-						gpress[i] = 10;
-					} else {
-						if (gpress[i]) {
-							u[0].down = false;
-						}
-					}
-					if (gp[i].buttons[3].pressed || aleft) {
-						u[0].left = true;
-						gpress[i] = 10;
-					} else {
-						if (gpress[i]) {
-							u[0].left = false;
-						}
-					}
-					if (gp[i].buttons[1].pressed || aright) {
-						u[0].right = true;
-						gpress[i] = 10;
-					} else {
-						if (gpress[i]) {
-							u[0].right = false;
-						}
-					}
-					if (gp[i].buttons.length > 7) {
-						if (gp[i].buttons[4].pressed) {
-							if (!gparr) {
-								if (u[0].arrace) {
-									u[0].arrace = false;
-								} else {
-									u[0].arrace = true;
-								}
-								gparr = true;
-							}
-							gpress[i] = 10;
-						} else {
-							if (gpress[i]) {
-								gparr = false;
-							}
-						}
-						if (gp[i].buttons[5].pressed) {
-							u[0].handb = true;
-							gpress[i] = 10;
-						} else {
-							if (gpress[i]) {
-								u[0].handb = false;
-							}
-						}
-						if (gp[i].buttons[6].pressed) {
-							lookback = -1;
-							gpress[i] = 10;
-						} else {
-							if (gpress[i]) {
-								if (lookback == -1) {
-									lookback = 0;
-								}
-							}
-						}
-						if (gp[i].buttons[7].pressed) {
-							lookback = 1;
-							gpress[i] = 10;
-						} else {
-							if (gpress[i]) {
-								if (lookback == 1) {
-									lookback = 0;
-								}
-							}
-						}
-					}
-					var penter = false;
-					for (var k = 8; k < gp[i].buttons.length; k++) {
-						if (gp[i].buttons[k].pressed) {
-							penter = true;
-						}
-					}
-					if (penter) {
-						if (!enter) {
-							enter = 1;
-						}
-						gpress[i] = 10;
-					} else {
-						if (gpress[i]) {
-							if (enter) {
-								enter = 0;
-							}
-						}
-					}
-					if (gpress[i]) {
-						gpress[i]--;
-					}
-				}
-			}
-		}
+	if (window.smoothRendering) {
+		savePreviousStates();
 	}
 	if (fase == 0) {
 		loaddata();
@@ -12027,10 +12274,10 @@ function doGameTick() {
 			rd.drawImage(rosize, ((canw * 0.5) - (rwd * 0.5)), (canh + (rhd * 0.4)), rwd, rhd);
 		}
 	}
-	if (frgm >= m) {
+	if (frgm >= physicsMultiplier) {
 		frgm -= 1;
 	}
-	frgm += m;
+	frgm += physicsMultiplier;
 }
 var interaud = null;
 var interaudstat = 0;
@@ -12245,22 +12492,22 @@ function checknplay() {
 		gofullscreen = true;
 	}
 	if ((interaudstat == 1) && (checkmusic != 2) && (!mutemusic)) {
-		if (interaud.currentTime == 0) {
-			interaud.play();
-		}
+		//if (interaud.currentTime == 0) {
+			//interaud.play();
+		//}
 		checkmusic = 2;
 	}
 	if ((stageaudstat == 1) && (checkmusic != 1) && (!mutemusic)) {
-		if (stageaud.currentTime == 0) {
-			stageaud.play();
-		}
+		//if (stageaud.currentTime == 0) {
+			//stageaud.play();
+		//}
 		checkmusic = 1;
 	}
 	if ((checksnd) && (playedasnd) && (fase == 7) && (canplaysnd) && (sndload[25]) && (!mutegame)) {
-		if (soundau.currentTime == 0) {
+		//if (soundau.currentTime == 0) {
 			playsnd(25, 1);
 			checksnd = 1;
-		}
+		//}
 		checksnd--;
 	}
 }
@@ -13769,7 +14016,7 @@ function drawinter() {
 							drawcs(112, "Checkpoint Missed!", 255, 128, 0, 2);
 						}
 					}
-					if (frgm >= m) {
+					if (frgm >= physicsMultiplier) {
 						missedcp[im]++;
 						if (missedcp[im] == 70) {
 							missedcp[im] = -2;
@@ -13777,7 +14024,7 @@ function drawinter() {
 					}
 				} else {
 					if ((carIsGrounded[im]) && (cntovn < 70)) {
-						if (frgm >= m) {
+						if (frgm >= physicsMultiplier) {
 							if (Math.abs(ana) > 100) {
 								cntan++;
 							} else {
@@ -13787,7 +14034,7 @@ function drawinter() {
 							}
 						}
 						if (cntan > 40) {
-							if (frgm >= m) {
+							if (frgm >= physicsMultiplier) {
 								cntovn++;
 							}
 							cntan = 40;
@@ -13877,7 +14124,7 @@ function drawinter() {
 					dmflk = true;
 				}
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				dmcnt++;
 			}
 			if (dmcnt > (167 - (trav * 1.5))) {
@@ -14044,7 +14291,7 @@ function drawinter() {
 						}
 					}
 				}
-				if (frgm >= m) {
+				if (frgm >= physicsMultiplier) {
 					pwcnt++;
 				}
 				if (pwcnt == 300) {
@@ -14075,7 +14322,7 @@ function drawinter() {
 					}
 					tflk = true;
 				}
-				if (frgm >= m) {
+				if (frgm >= physicsMultiplier) {
 					tcnt++;
 				}
 			} else {
@@ -14091,7 +14338,7 @@ function drawinter() {
 					drawcs(136, asay, 0, 128, 255, 0);
 					aflk = true;
 				}
-				if (frgm >= m) {
+				if (frgm >= physicsMultiplier) {
 					auscnt++;
 				}
 			}
@@ -14104,7 +14351,7 @@ function drawinter() {
 				tflk = true;
 			}
 		}
-		if ((trcnt[im] == 10) && (frgm >= m)) {
+		if ((trcnt[im] == 10) && (frgm >= physicsMultiplier)) {
 			loopin = "";
 			spin = "";
 			asay = "";
@@ -15742,7 +15989,7 @@ function arrow(pnt, misdcp, pntcar) {
 					dmflk2 = true;
 				}
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				dmcnt++;
 			}
 			if (dmcnt > (167 - (trav * 1.5))) {
@@ -16703,7 +16950,7 @@ function replay() {
 					}
 				}
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				if (car[c].fcnt == 20) {
 					squash[c] = 0;
 					nbsq[c] = 0;
@@ -16936,7 +17183,7 @@ function hreplay() {
 					}
 				}
 			}
-			if (frgm >= m) {
+			if (frgm >= physicsMultiplier) {
 				if (car[c].fcnt == 20) {
 					squash[c] = 0;
 					nbsq[c] = 0;
@@ -17105,26 +17352,6 @@ function URandom(seed) {
 	};
 }
 
-
-
-
-
-
-
-
-window.proceduralClouds = newrad3D();
-window.proceduralMountains = newrad3D();
-
-function URandom(seed) {
-	this.seed = seed >>> 0;
-	this.NextDouble = function() {
-		var t = this.seed += 0x6D2B79F5;
-		t = Math.imul(t ^ t >>> 15, t | 1);
-		t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-		return (((t ^ t >>> 14) >>> 0) / 4294967296);
-	};
-}
-
 function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 	window.GLOBAL_GROUND_HEIGHT_OFFSET = 0;
 
@@ -17138,36 +17365,27 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 	var javaMaxb = Math.round((limb - 5) * 10);
 
 	var cgrnd = window.stageGroundColor || [150, 150, 150];
-	var cpol = window.stagePolysColor || [115, 115, 115]; // FALLBACK TO DEFAULT IF NOT FOUND
 	
-	function snapColor(c) {
-		return [
-			Math.max(0, Math.min(255, c[0] + c[0] * snap[0])),
-			Math.max(0, Math.min(255, c[1] + c[1] * snap[1])),
-			Math.max(0, Math.min(255, c[2] + c[2] * snap[2]))
-		];
-	}
-	
-	var snappedGrnd = snapColor(cgrnd);
-	var snappedCpol = snapColor(cpol); // DYNAMIC
-
-	function applyBuffers(radObj, verts, colors, indices, vCount) {
-		gl.getExtension('OES_element_index_uint');
+	function applyBuffers(radObj, verts, colors, indices, vCount, customNorms) {
 		radObj.use32Int = vCount > 65535;
-		var norms = new Float32Array(vCount * 3);
-		for(var i=0; i < vCount * 3; i+=3) norms[i+1] = 1.0; 
+		
+		var norms = customNorms;
+		if (!norms) { // If custom normals aren't provided, fill with default Up-vectors
+			norms = new Float32Array(vCount * 3);
+			for(var i=0; i < vCount * 3; i+=3) norms[i+1] = 1.0; 
+		}
 
 		gl.deleteBuffer(radObj.vbuf); gl.deleteBuffer(radObj.cbuf); gl.deleteBuffer(radObj.ibuf); gl.deleteBuffer(radObj.nbuf);
 		radObj.vbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, radObj.vbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
 		radObj.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, radObj.cbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
-		radObj.nbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, radObj.nbuf); gl.bufferData(gl.ARRAY_BUFFER, norms, gl.STATIC_DRAW);
+		radObj.nbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, radObj.nbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
 		radObj.ibuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, radObj.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, radObj.use32Int ? new Uint32Array(indices) : new Uint16Array(indices), gl.STATIC_DRAW);
 		
 		radObj.ni = indices.length; radObj.mat = mat4.create(); radObj.loaded = 1; radObj.ownshade = true; radObj.texture = null;
 	}
 
 	// ========================================================
-	// 1. GENERATE DETAILED GROUND POLYS + BASE FLOOR
+	// 1. GENERATE DETAILED GROUND POLYS
 	// ========================================================
 	var sx = javaMaxl, ncx = javaMaxr - javaMaxl;
 	var sz = javaMaxb, ncz = javaMaxt - javaMaxb;
@@ -17220,36 +17438,44 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 		if (rng.NextDouble() > rng.NextDouble()) pcv[i43] = 1.0;
 	}
 
+	// --- 1a. GENERATE CAMERA-TRACKING BASE FLOOR ---
+	// i was considering getting rid of this entirely and just use skydom, however gpu fog needs something in real space to accurately work!
+	window.proceduralBaseFloor = window.proceduralBaseFloor || newrad3D();
+	var bVerts = [], bColors = [], bIndices = [];
+	var bSize = 150000.0 * 0.1, bY = getY(251); 
+	bVerts.push(-bSize, bY, -bSize, bSize, bY, -bSize, -bSize, bY, bSize, bSize, bY, bSize);
+	for (var k=0; k<4; k++) bColors.push(0.0, 1.0, 0.0, 1.0); // Bakes G=1.0 for Ground Blend
+	bIndices.push(0, 1, 2, 1, 3, 2);
+	applyBuffers(window.proceduralBaseFloor, bVerts, bColors, bIndices, 4);
+
+	// --- 1b. GENERATE DETAILED GROUND POLYS ---
 	var gVerts = [], gColors = [], gIndices = [], gVertCount = 0;
 
-	// --- RE-ADDED LOCAL BASE FLOOR ---
-	// Sized to 50,000 to cleanly cover the 30,000 zFar render distance. 
-	// The wedge skybox will seamlessly fill in the rest of the horizon!
-	var qSize = 50000.0, qy = getY(251); 
+	// INVISIBLE STRUCTURAL PADDING (Fixes WebGL dropping the mesh)
+	var qSize = 10000.0 * 0.1, qy = getY(251); 
 	gVerts.push(-qSize, qy, -qSize, qSize, qy, -qSize, -qSize, qy, qSize, qSize, qy, qSize);
-	for (var k=0; k<4; k++) gColors.push(snappedGrnd[0]/255, snappedGrnd[1]/255, snappedGrnd[2]/255, 1.0);
-	gIndices.push(0, 1, 2, 1, 3, 2);
-	gVertCount += 4;
+	for (var k=0; k<4; k++) gColors.push(0.0, 0.0, 0.0, 0.0);
+	gVertCount += 4; // DO NOT ADD TO gIndices!
 
-	// --- DETAILED DIRT PATCHES ---
-	function pushGroundFan(cx, cy, cz, pts, r, g, b) {
+	function pushGroundFan(cx, cy, cz, pts, pW, gW) {
 		var baseIdx = gVertCount;
 		gVerts.push(-cx * 0.1, getY(cy), cz * 0.1);
-		gColors.push(r / 255, g / 255, b / 255, 1.0);
+		gColors.push(pW, gW, 0.0, 1.0);
 		gVertCount++;
 		for (var k = 0; k < 8; k++) {
 			gVerts.push(-pts[k][0] * 0.1, getY(pts[k][1]), pts[k][2] * 0.1); 
-			gColors.push(r / 255, g / 255, b / 255, 1.0);
+			gColors.push(pW, gW, 0.0, 1.0);
 			gVertCount++;
 		}
 		for (var k = 1; k < 8; k++) gIndices.push(baseIdx, baseIdx + k, baseIdx + k + 1);
 		gIndices.push(baseIdx, baseIdx + 8, baseIdx + 1);
 	}
+	
 	for (var loop = 0; loop < 2; loop++) {
 		for (var i = 0; i < nrw * ncl; i++) {
-			var pr = Math.floor((snappedCpol[0] * pcv[i] + (loop===0 ? snappedGrnd[0]:0)) / (loop===0 ? 2.0:1.0));
-			var pg = Math.floor((snappedCpol[1] * pcv[i] + (loop===0 ? snappedGrnd[1]:0)) / (loop===0 ? 2.0:1.0));
-			var pb = Math.floor((snappedCpol[2] * pcv[i] + (loop===0 ? snappedGrnd[2]:0)) / (loop===0 ? 2.0:1.0));
+			// Bake the Mix Weights! (R = Polys, G = Ground)
+			var pW = pcv[i] / (loop===0 ? 2.0 : 1.0);
+			var gW = (loop===0 ? 1.0 : 0.0) / (loop===0 ? 2.0 : 1.0);
 			var pts = [], cx = 0, cz = 0;
 			for (var j = 0; j < 8; j++) {
 				var px = Math.floor((loop===0 ? (ogpx[i*8+j]*pvr[i*8+j]) : ogpx[i*8+j]) + cgpx[i]);
@@ -17257,10 +17483,9 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 				pts.push([px, 250, pz]);
 				cx += px; cz += pz;
 			}
-			pushGroundFan(cx/8, 250, cz/8, pts, pr, pg, pb);
+			pushGroundFan(cx/8, 250, cz/8, pts, pW, gW);
 		}
 	}
-
 	ground.disableFog = false;
 	applyBuffers(ground, gVerts, gColors, gIndices, gVertCount);
 
@@ -17269,16 +17494,21 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 	// ========================================================
 	var cVerts = [], cColors = [], cIndices = [], cVertCount = 0;
 	var cRng = new URandom(73); 
-	var noc = Math.floor(((javaMaxr/20 + 10000) - (javaMaxl/20 - 10000)) * ((javaMaxt/20 + 10000) - (javaMaxb/20 - 10000)) / 16666667);
+	
+	var pad = 7000;
+	var cMinX = (javaMaxl / 20) - pad, cMaxX = (javaMaxr / 20) + pad;
+	var cMinZ = (javaMaxb / 20) - pad, cMaxZ = (javaMaxt / 20) + pad;
+	var noc = Math.floor(((cMaxX - cMinX) * (cMaxZ - cMinZ)) / 16666667);
+	if (noc > 150) noc = 150; 
+	if (noc < 20) noc = 20;   
 	
 	var clx = new Int32Array(noc), clz = new Int32Array(noc);
 	var clay = new Int32Array(noc * 3 * 12), clax = new Int32Array(noc * 3 * 12), claz = new Int32Array(noc * 3 * 12);
-	var clc = new Int32Array(noc * 2 * 6 * 3);
-	var clds = snapColor(cloudsc);
+	var clc = new Float32Array(noc * 2 * 6 * 3);
 
 	for (var i = 0; i < noc; i++) {
-		clx[i] = Math.floor((javaMaxl/20 - 10000) + ((javaMaxr/20 + 10000) - (javaMaxl/20 - 10000)) * cRng.NextDouble());
-		clz[i] = Math.floor((javaMaxb/20 - 10000) + ((javaMaxt/20 + 10000) - (javaMaxb/20 - 10000)) * cRng.NextDouble());
+		clx[i] = Math.floor(cMinX + (cMaxX - cMinX) * cRng.NextDouble());
+		clz[i] = Math.floor(cMinZ + (cMaxZ - cMinZ) * cRng.NextDouble());
 		var f = 0.25 + cRng.NextDouble() * 1.25;
 		
 		var setPoint = function(idx, mA, mB, nA, nB) {
@@ -17318,27 +17548,22 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 
 		for (var j = 0; j < 6; j++) {
 			var d = cRng.NextDouble(), d102 = cRng.NextDouble();
-			for (var k = 0; k < 3; k++) {
-				var f92 = clds[k] * 1.05 - clds[k];
-				var val0 = Math.floor(clds[k] + f92 * d);
-				var val1 = Math.floor(clds[k] * 1.05 + f92 * d102);
-				clc[i*36 + j*3 + k] = val0 > 255 ? 255 : (val0 < 0 ? 0 : val0);
-				clc[i*36 + 18 + j*3 + k] = val1 > 255 ? 255 : (val1 < 0 ? 0 : val1);
-			}
+			// Bake the Brightness Multiplier Weight!
+			clc[i*12 + j*2 + 0] = (1.0 + 0.05 * d);
+			clc[i*12 + j*2 + 1] = (1.05 + 0.05 * d102);
 		}
 	}
 
-	function pushCloudPoly(pts, r, g, b) {
+	function pushCloudPoly(pts, brightness) {
 		var baseIdx = cVertCount;
 		for (var k = 0; k < pts.length; k++) {
 			cVerts.push(-pts[k][0] * 0.1, getY(pts[k][1]), pts[k][2] * 0.1); 
-			cColors.push(r / 255, g / 255, b / 255, 1.0);
+			cColors.push(brightness, brightness, brightness, 1.0);
 			cVertCount++;
 		}
 		for (var k = 1; k < pts.length - 1; k++) cIndices.push(baseIdx, baseIdx + k, baseIdx + k + 1);
 	}
 
-	// Grab the parsed height (or default to 0)
 	var cHeight = window.stageCloudsHeight || 0;
 
 	for (var i = 0; i < noc; i++) {
@@ -17346,18 +17571,13 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 		for (var j = 0; j < 3; j++) {
 			for (var k = 0; k < 12; k++) {
 				px[j * 12 + k] = (clax[i*36 + j*12 + k] + clx[i]) * 20;
-				
-				// ADDED 'cHeight' HERE! This perfectly shifts the clouds up or down in Java space
 				py[j * 12 + k] = (clay[i*36 + j*12 + k] + cHeight - 250) * 20 + 250; 
-				
 				pz[j * 12 + k] = (claz[i*36 + j*12 + k] + clz[i]) * 20;
 			}
 		}
 		for (var pass = 0; pass < 2; pass++) {
 			for (var j = 0; j < 12; j++) {
-				var r = clc[i*36 + 18*pass + Math.floor(j/2)*3 + 0];
-				var g = clc[i*36 + 18*pass + Math.floor(j/2)*3 + 1];
-				var b = clc[i*36 + 18*pass + Math.floor(j/2)*3 + 2];
+				var brightness = clc[i*12 + Math.floor(j/2)*2 + pass];
 				var pts = [];
 				for (var k = 0; k < 6; k++) {
 					var l = 0, m = pass === 0 ? 1 : 0;
@@ -17369,12 +17589,12 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 					if (k == 5) { l = j; m = pass === 0 ? 2 : 1; }
 					pts.push([px[m * 12 + l], py[m * 12 + l], pz[m * 12 + l]]);
 				}
-				pushCloudPoly(pts, r, g, b);
+				pushCloudPoly(pts, brightness);
 			}
 		}
 		var pts = [];
 		for (var j = 0; j < 12; j++) pts.push([px[j], py[j], pz[j]]);
-		pushCloudPoly(pts, clds[0], clds[1], clds[2]);
+		pushCloudPoly(pts, 1.0);
 	}
 	proceduralClouds.disableFog = true;
 	applyBuffers(proceduralClouds, cVerts, cColors, cIndices, cVertCount);
@@ -17418,10 +17638,11 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 			if (i178 > 1 && i178 < nmv[i174] - 2) mty[i174][i178] = Math.floor((-1600.0 - 1700.0 * mRng.NextDouble()) * f176 + 250);
 			mty[i174][i178 + nmv[i174]] = 250 - 70;
 			mtz[i174][i178] = i171 + i172 + ais[i174]; mtz[i174][i178 + nmv[i174]] = mtz[i174][i178];
+			
+			// Bake the Raw Mountain Color Weight!
 			var f179 = 0.5 + mRng.NextDouble() * 0.5;
-			mtc[i174][i178][0] = Math.floor(170.0 * f179 + 170.0 * f179 * snap[0]);
-			mtc[i174][i178][1] = Math.floor(i175 * f179 + 85.0 * f179 * snap[1]);
-			if (mtc[i174][i178][0] > 255) mtc[i174][i178][0] = 255; if (mtc[i174][i178][1] > 255) mtc[i174][i178][1] = 255;
+			mtc[i174][i178][0] = 170.0 * f179;
+			mtc[i174][i178][1] = i175 * f179;
 		}
 		for (var i180 = 1; i180 < nmv[i174] - 1; i180++) {
 			mty[i174][i180] = Math.floor((Math.floor((mty[i174][i180 - 1] + mty[i174][i180 + 1]) / 2) + mty[i174][i180]) / 2);
@@ -17449,16 +17670,16 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 			mz[j] = mtz[mrd[i]][j] * 30;
 		}
 		for (var j = 0; j < nmv[mrd[i]] - 1; j++) {
-			var mr = Math.floor((mtc[mrd[i]][j][0] + snappedGrnd[0]) / 2.0);
-			var mg = Math.floor((mtc[mrd[i]][j][1] + snappedGrnd[1]) / 2.0);
-			var mb = Math.floor((mtc[mrd[i]][j][2] + snappedGrnd[2]) / 2.0);
+			var rawR = mtc[mrd[i]][j][0];
+			var rawG = mtc[mrd[i]][j][1];
+			
 			var baseIdx = mVertCount;
 			for (var k = 0; k < 4; k++) {
 				var l = k + j;
 				if (k == 2) l = j + nmv[mrd[i]] + 1;
 				if (k == 3) l = j + nmv[mrd[i]];
 				mVerts.push(-mx[l] * 0.1, getY(my[l]), mz[l] * 0.1);
-				mColors.push(mr / 255, mg / 255, mb / 255, 1.0);
+				mColors.push(rawR / 255, rawG / 255, 0.0, 0.5); // A=0.5 triggers the 50% Mix in the Shader!
 				mVertCount++;
 			}
 			mIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx, baseIdx+2, baseIdx+3);
@@ -17468,92 +17689,256 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 	applyBuffers(proceduralMountains, mVerts, mColors, mIndices, mVertCount);
 
 	// ========================================================
-	// 4. GENERATE SKYDOM (Tweakable Mirrored V-Shape)
+	// 4. GENERATE SKYDOM (The True V-Wedge Illusion)
 	// ========================================================
-	var sVerts = [], sColors = [], sIndices = [], sVertCount = 0;
+	var sVerts = [], sColors = [], sNorms = [], sIndices = [], sVertCount = 0;
 
-	function pushSkyBand(y1, z1, y2, z2, c1, c2) {
+	// --- TWEAKABLE SKY & FOG VARIABLES ---
+	var skyDarkR = 0.985; 
+	var skyDarkG = 0.985;
+	var skyDarkB = 0.985; 
+	var fogMixRatio = 0.65;
+	var fogStartHeight = -400.0; // Negative goes UP. Higher (-800) = Overcast. Lower (-50) = Fog hugs the horizon.
+	
+	var skyDarkSpread = 3500.0; // Lower = Darkens higher up. Higher = Darkens closer to the horizon.
+	// -------------------------------------
+
+	function pushSkyWedge(y1, z1, y2, z2, l1, l2) {
 		var baseIdx = sVertCount;
-		var W = 200000.0; // Incredibly wide to hide horizontal edges
+		var W = 5000.0; // Ultra-wide flat plane to cover the screen entirely, NO CORNERS!
 		
+		// Single ultra-wide front-facing plane (The "V" Curtain)
 		sVerts.push(
-			-W * 0.1, y1 * 0.1, -z1 * 0.1,  
-			 W * 0.1, y1 * 0.1, -z1 * 0.1,  
-			-W * 0.1, y2 * 0.1, -z2 * 0.1,  
-			 W * 0.1, y2 * 0.1, -z2 * 0.1
+			-W*0.1, y1*-0.1, z1*0.1,  
+			 W*0.1, y1*-0.1, z1*0.1,  
+			-W*0.1, y2*-0.1, z2*0.1,  
+			 W*0.1, y2*-0.1, z2*0.1
 		);
-		sColors.push(c1.r, c1.g, c1.b, 1.0, c1.r, c1.g, c1.b, 1.0, c2.r, c2.g, c2.b, 1.0, c2.r, c2.g, c2.b, 1.0);
-		sIndices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx + 1, baseIdx + 3, baseIdx + 2);
+		sColors.push(l1.skyM[0], l1.skyM[1], l1.skyM[2], 1.0, 
+					 l1.skyM[0], l1.skyM[1], l1.skyM[2], 1.0, 
+					 l2.skyM[0], l2.skyM[1], l2.skyM[2], 1.0, 
+					 l2.skyM[0], l2.skyM[1], l2.skyM[2], 1.0);
+		sNorms.push(l1.fogW, l1.grndW, 0.0,
+					l1.fogW, l1.grndW, 0.0,
+					l2.fogW, l2.grndW, 0.0,
+					l2.fogW, l2.grndW, 0.0);
+		sIndices.push(baseIdx, baseIdx+1, baseIdx+2, baseIdx+1, baseIdx+3, baseIdx+2);
 		sVertCount += 4;
 	}
 
-	var skyC = snapColor(skyc), fogC = snapColor(fogc), grndC = snappedGrnd;
-
-	// --- TWEAKABLE VARIABLES ---
-	// Feel free to replace fogSpread and fogBands with your dynamic density()/distfog math!
-	
-	var fogSpread = 0.10;	   // Height percentage (0.0 to 1.0) where fog transitions into Sky/Ground
-	var fogBands = 8;		   // Number of granular polygon steps for the abrupt fog transition
-	
-	var skyDarkenRatio = -0.15;   // Percentage of original brightness at the very top of the sky
-	var skyBands = 12;		  // Number of granular polygon steps for the soft upper sky gradient
-
-	var R = 8000.0;			 // Depth (distance to the horizon fold)
-	var H = 8000.0;			 // Height (distance to the top/bottom openings)
-
-	// Helper to blend colors smoothly
-	function lerpColor(c1, c2, t) {
-		return [
-			c1[0] + (c2[0] - c1[0]) * t,
-			c1[1] + (c2[1] - c1[1]) * t,
-			c1[2] + (c2[2] - c1[2]) * t
-		];
-	}
-
 	var layers = [];
-	var darkSkyC = [skyC[0] * skyDarkenRatio, skyC[1] * skyDarkenRatio, skyC[2] * skyDarkenRatio];
+	
+	// Zenith Layer (Pulled massively behind/above the camera to open the top of the "V" shape)
+	var zR = Math.pow(skyDarkR, 19), zG = Math.pow(skyDarkG, 19), zB = Math.pow(skyDarkB, 19);
+	layers.push({ y: -500.0, z: -500.0, skyM: [zR, zG, zB], fogW: 0.0, grndW: 0.0 });
 
-	// 1. TOP SKY (Darkened -> Pure Sky)
-	// Starts at 1.0 (Zenith) and slides down to the fog boundary
-	for (var i = 0; i <= skyBands; i++) {
-		var progress = i / skyBands; // 0.0 = Zenith, 1.0 = Start of Fog
-		var t = 1.0 - progress * (1.0 - fogSpread); 
-		var c = lerpColor(darkSkyC, skyC, progress);
-		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
+	for (var i = 19; i >= 1; --i) {
+		var oY = fogStartHeight - 700 - i * 70, oZ = skyDarkSpread;
+		var dist = Math.sqrt(oY*oY + oZ*oZ);
+		var sR = Math.pow(skyDarkR, i), sG = Math.pow(skyDarkG, i), sB = Math.pow(skyDarkB, i);
+		layers.push({ y: (oY/dist)*100, z: (oZ/dist)*100, skyM: [sR, sG, sB], fogW: 0.0, grndW: 0.0 });
 	}
 
-	// 2. UPPER FOG (Pure Sky -> Fog)
-	// Starts at the fog boundary and slides down to 0.0 (Horizon)
-	for (var i = 1; i <= fogBands; i++) {
-		var progress = i / fogBands; // 0.0 = Start of Fog, 1.0 = Horizon
-		var t = fogSpread * (1.0 - progress);
-		var c = lerpColor(skyC, fogC, progress);
-		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
+	var oY = fogStartHeight, oZ = skyDarkSpread;
+	var dist = Math.sqrt(oY*oY + oZ*oZ);
+	layers.push({ y: (oY/dist)*100, z: (oZ/dist)*100, skyM: [1.0, 1.0, 1.0], fogW: 0.0, grndW: 0.0 });
+
+	for (var i = 0; i < 16; ++i) {
+		var oY2 = fogStartHeight, oZ2 = (10700 / 2.5) * (i + 1);
+		var dist2 = Math.sqrt(oY2*oY2 + oZ2*oZ2);
+		var sW = Math.pow(fogMixRatio, i + 1);
+		var fW = 1.0 - sW;
+		layers.push({ y: (oY2/dist2)*100, z: (oZ2/dist2)*100, skyM: [sW, sW, sW], fogW: fW, grndW: 0.0 });
 	}
 
-	// 3. LOWER FOG (Fog -> Pure Ground)
-	// Starts at 0.0 (Horizon) and slides down into the ground. (Perfect Mirror of Upper Fog!)
-	for (var i = 1; i <= fogBands; i++) {/*
-		var progress = i / fogBands; // 0.0 = Horizon, 1.0 = End of Fog
-		var t = -fogSpread * progress;
-		var c = lerpColor(fogC, grndC, progress);
-		layers.push({ y: H * t, z: R * (1.0 - Math.abs(t)), r: c[0]/255, g: c[1]/255, b: c[2]/255 });
-	*/}
+	// Horizon (The sharp point of the "V", pushed out perfectly in front of the camera)
+	layers.push({ y: 0.0, z: 100.0, skyM: [0,0,0], fogW: 1.0, grndW: 0.0 }); 
+	layers.push({ y: 5.0, z: 99.8, skyM: [0,0,0], fogW: 1.0, grndW: 0.0 });
+	layers.push({ y: 15.0, z: 98.8, skyM: [0,0,0], fogW: 0.0, grndW: 1.0 }); 
+	
+	// Nadir (Pulled massively behind/below the camera to close the bottom of the "V")
+	layers.push({ y: 500.0, z: -500.0, skyM: [0,0,0], fogW: 0.0, grndW: 1.0 }); 
 
-	// 4. SOLID GROUND (Pure Ground down to Nadir)
-	// Drops straight to the bottom of the V-Shape (-1.0)
-	layers.push({ y: -H, z: 0.0, r: grndC[0]/255, g: grndC[1]/255, b: grndC[2]/255 });
-
-	// Build the Geometry
 	for (var i = 0; i < layers.length - 1; ++i) {
-		pushSkyBand(layers[i].y, layers[i].z, layers[i+1].y, layers[i+1].z, layers[i], layers[i+1]);
+		pushSkyWedge(layers[i].y, layers[i].z, layers[i+1].y, layers[i+1].z, layers[i], layers[i+1]);
 	}
 
 	skydom.disableFog = true; 
-	applyBuffers(skydom, sVerts, sColors, sIndices, sVertCount);
+	applyBuffers(skydom, sVerts, sColors, sIndices, sVertCount, sNorms);
 }
 
 
 
 
 
+
+function createProceduralWheel(w, rims, gwgr) {
+    var mesh = newrad3D();
+    mesh.isLegacyRad = true;
+    mesh.hasEdges = true;
+    mesh.ownlight = true;
+    mesh.alpha = 0;
+
+    var verts = [], norms = [], colors = [], indices = [], edges = [];
+    var vIndex = 0;
+
+    var segs = window.WHEEL_SEGMENTS || 6;
+    
+    var physicsRadius = w.height * 1.3; 
+    var R = physicsRadius / Math.cos(Math.PI / segs); 
+    var hw = Math.abs(w.width) * 4.0;
+    var rimR = rims.size * 0.1;
+    var depthRatio = rims.depth * 0.1;
+    var sizeRatio = rims.size * 0.1;
+    
+    if (sizeRatio > 0) {
+        if (depthRatio / sizeRatio > 41.0) depthRatio = sizeRatio * 41.0;
+        if (depthRatio / sizeRatio < -25.0) depthRatio = -sizeRatio * 25.0;
+    }
+    
+    var hubX = depthRatio * Math.abs(w.width); 
+
+    var isLeft = (w.width < 0);
+    var signX = isLeft ? -1 : 1;
+
+    var tCol = [gwgr / 255, gwgr / 255, gwgr / 255, 1.0];
+    var rCol = [rims.r / 255, rims.g / 255, rims.b / 255, 1.0];
+    var darkTire = [tCol[0] * 0.8, tCol[1] * 0.8, tCol[2] * 0.8, 1.0];
+
+    function addFace(points, col, addOutline) {
+        if (points.length < 3) return;
+        
+        var pts = points.map(p => [p[0] * signX, p[1], p[2]]);
+        if (isLeft) pts.reverse();
+
+        var p1 = pts[0], p2 = pts[1], p3 = pts[2];
+        var nx = (p2[1]-p1[1])*(p3[2]-p1[2]) - (p2[2]-p1[2])*(p3[1]-p1[1]);
+        var ny = (p2[2]-p1[2])*(p3[0]-p1[0]) - (p2[0]-p1[0])*(p3[2]-p1[2]);
+        var nz = (p2[0]-p1[0])*(p3[1]-p1[1]) - (p2[1]-p1[1])*(p3[0]-p1[0]);
+        var len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+        if(len > 0) { nx/=len; ny/=len; nz/=len; } else { ny=1; nx=0; nz=0; }
+
+        var startIdx = vIndex;
+        for(var i = 0; i < pts.length; i++) {
+            verts.push(pts[i][0], pts[i][1], pts[i][2]);
+            norms.push(nx, ny, nz);
+            colors.push(col[0], col[1], col[2], col[3]);
+            vIndex++;
+        }
+
+        for (var i = 1; i < pts.length - 1; i++) {
+            indices.push(startIdx, startIdx + i, startIdx + i + 1);
+        }
+
+        // We only push EDGES here, no colors!
+        if (addOutline === true) {
+            for (var i = 0; i < pts.length; i++) {
+                edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
+            }
+        } else if (Array.isArray(addOutline)) {
+            for (var i = 0; i < pts.length; i++) {
+                if (addOutline[i]) {
+                    edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
+                }
+            }
+        }
+    }
+
+    var ringOut = [], ringIn = [], ringRim = [];
+    var cIn = [-hw, 0, 0];
+    var cOut = [hubX, 0, 0]; 
+
+    for (var i = 0; i < segs; i++) {
+        var theta = (i * Math.PI * 2 / segs) + (Math.PI / segs);
+        var cy = R * Math.cos(theta), cz = R * Math.sin(theta);
+        var ry = rimR * Math.cos(theta), rz = rimR * Math.sin(theta);
+        ringIn.push([-hw, cy, cz]);
+        ringOut.push([hw, cy, cz]);
+        ringRim.push([hw, ry, rz]);
+    }
+
+    for (var i = 0; i < segs; i++) {
+        var n1 = i, n2 = (i + 1) % segs;
+        addFace([ringIn[n2], ringOut[n2], ringOut[n1], ringIn[n1]], tCol, false);
+        addFace([ringOut[n2], ringRim[n2], ringRim[n1], ringOut[n1]], tCol, [false, true, false, true]);
+        addFace([ringIn[n1], cIn, ringIn[n2]], darkTire, false);
+        addFace([ringRim[n2], cOut, ringRim[n1]], rCol, true);
+    }
+
+    // --- THE FIX: PERFECT PARALLEL EDGE COLOR BUFFER ---
+    // We create a perfectly sized array of pure black that perfectly matches the vertex count!
+    var darkColors = new Float32Array(colors.length);
+    for (var i = 0; i < colors.length; i += 4) {
+        darkColors[i] = 0.0;
+        darkColors[i + 1] = 0.0;
+        darkColors[i + 2] = 0.0;
+        darkColors[i + 3] = 1.0;
+    }
+
+    mesh.vbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    mesh.nbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
+    mesh.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.cbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+    mesh.ibuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+    mesh.edgebuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.edgebuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(edges), gl.STATIC_DRAW);
+    
+    // Bind the perfectly aligned darkColors array
+    mesh.edgeColorBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.edgeColorBuf); gl.bufferData(gl.ARRAY_BUFFER, darkColors, gl.STATIC_DRAW);
+
+    mesh.ni = indices.length;
+    mesh.edgeCount = edges.length;
+    mesh.loaded = 1;
+    return mesh;
+}
+
+
+
+function updateMenuWheels(cIdx) {
+	var cRad = carobj[cIdx];
+	if (!whl[cIdx]) whl[cIdx] = [];
+	if (!whl[cIdx].legacyWheels) whl[cIdx].legacyWheels = [];
+
+	if (cRad.visualWheels) {
+		for (var w = 0; w < cRad.visualWheels.length; w++) {
+			var vw = cRad.visualWheels[w].def;
+			if (!whl[cIdx].legacyWheels[w]) whl[cIdx].legacyWheels[w] = { mat: mat4.create() };
+			var lW = whl[cIdx].legacyWheels[w];
+			
+			lW.x = cRad.x + (vw.x * cRad.mat[0]) - (vw.y * cRad.mat[4]) + (vw.z * cRad.mat[8]);
+			lW.y = cRad.y + (vw.x * cRad.mat[1]) - (vw.y * cRad.mat[5]) + (vw.z * cRad.mat[9]);
+			lW.z = cRad.z + (vw.x * cRad.mat[2]) - (vw.y * cRad.mat[6]) + (vw.z * cRad.mat[10]);
+
+			// Just copy the car's matrix! No 90-degree Y rotation is needed because 
+			// the procedural wheels are natively modeled facing forward.
+			for (var k = 0; k < 12; k++) lW.mat[k] = cRad.mat[k];
+		}
+	} else {
+		// Standard 4 wheels for menu (Requires 90-deg rotation because tiredisk.rad axle is on Z axis)
+		whl[cIdx][0].x = (cRad.x - (wlx[cIdx][0] * cRad.mat[0]) - (wly[cIdx][0] * cRad.mat[4]) + (wlz[cIdx][0] * cRad.mat[8]));
+		whl[cIdx][0].y = (cRad.y - (wlx[cIdx][0] * cRad.mat[1]) - (wly[cIdx][0] * cRad.mat[5]) + (wlz[cIdx][0] * cRad.mat[9]));
+		whl[cIdx][0].z = (cRad.z - (wlx[cIdx][0] * cRad.mat[2]) - (wly[cIdx][0] * cRad.mat[6]) + (wlz[cIdx][0] * cRad.mat[10]));
+		whl[cIdx][0].mat = mat4.create();
+		for (var k = 0; k < 12; k++) whl[cIdx][0].mat[k] = cRad.mat[k];
+		mat4.rotate(whl[cIdx][0].mat, whl[cIdx][0].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
+
+		whl[cIdx][1].x = (cRad.x + (wlx[cIdx][0] * cRad.mat[0]) - (wly[cIdx][0] * cRad.mat[4]) + (wlz[cIdx][0] * cRad.mat[8]));
+		whl[cIdx][1].y = (cRad.y + (wlx[cIdx][0] * cRad.mat[1]) - (wly[cIdx][0] * cRad.mat[5]) + (wlz[cIdx][0] * cRad.mat[9]));
+		whl[cIdx][1].z = (cRad.z + (wlx[cIdx][0] * cRad.mat[2]) - (wly[cIdx][0] * cRad.mat[6]) + (wlz[cIdx][0] * cRad.mat[10]));
+		whl[cIdx][1].mat = mat4.create();
+		for (var k = 0; k < 12; k++) whl[cIdx][1].mat[k] = cRad.mat[k];
+		mat4.rotate(whl[cIdx][1].mat, whl[cIdx][1].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
+
+		whl[cIdx][2].x = (cRad.x - (wlx[cIdx][1] * cRad.mat[0]) - (wly[cIdx][1] * cRad.mat[4]) + (wlz[cIdx][1] * cRad.mat[8]));
+		whl[cIdx][2].y = (cRad.y - (wlx[cIdx][1] * cRad.mat[1]) - (wly[cIdx][1] * cRad.mat[5]) + (wlz[cIdx][1] * cRad.mat[9]));
+		whl[cIdx][2].z = (cRad.z - (wlx[cIdx][1] * cRad.mat[2]) - (wly[cIdx][1] * cRad.mat[6]) + (wlz[cIdx][1] * cRad.mat[10]));
+		whl[cIdx][2].mat = mat4.create();
+		for (var k = 0; k < 12; k++) whl[cIdx][2].mat[k] = cRad.mat[k];
+		mat4.rotate(whl[cIdx][2].mat, whl[cIdx][2].mat, (90 * (Math.PI / 180)), [0, 1, 0]);
+
+		whl[cIdx][3].x = (cRad.x + (wlx[cIdx][1] * cRad.mat[0]) - (wly[cIdx][1] * cRad.mat[4]) + (wlz[cIdx][1] * cRad.mat[8]));
+		whl[cIdx][3].y = (cRad.y + (wlx[cIdx][1] * cRad.mat[1]) - (wly[cIdx][1] * cRad.mat[5]) + (wlz[cIdx][1] * cRad.mat[9]));
+		whl[cIdx][3].z = (cRad.z + (wlx[cIdx][1] * cRad.mat[2]) - (wly[cIdx][1] * cRad.mat[6]) + (wlz[cIdx][1] * cRad.mat[10]));
+		whl[cIdx][3].mat = mat4.create();
+		for (var k = 0; k < 12; k++) whl[cIdx][3].mat[k] = cRad.mat[k];
+		mat4.rotate(whl[cIdx][3].mat, whl[cIdx][3].mat, (-90 * (Math.PI / 180)), [0, 1, 0]);
+	}
+}
