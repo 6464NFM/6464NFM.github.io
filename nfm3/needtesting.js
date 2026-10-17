@@ -453,13 +453,13 @@ function loadXRad(file, rad, isStagePiece, isCheckpoint) {
 						if (isStagePiece) {
 							//darkenFactor = hasStonecold ? 1.0 : 0.95;
 							if ((hasStonecold) && (hasRoadProperty)) {
-								darkenFactor = 0.80;
+								darkenFactor = 0.92;
 							} else {
 								//darkenFactor = 1.0;
-								darkenFactor = 0.80; //this is until all models are updated with road()
+								darkenFactor = 0.92; //this is until all models are updated with road()
 							}
 						}
-						if (isLight) darkenFactor = 0.9;
+						if (isLight) darkenFactor = 0.8;
 						if ((isLight) && (!isStagePiece)) darkenFactor = 0.60;
 						
 						webgl_dark_colors.push(current_color[0] * darkenFactor, current_color[1] * darkenFactor, current_color[2] * darkenFactor, 1.0);
@@ -2797,9 +2797,23 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 		} else gl.bindTexture(gl.TEXTURE_2D, tgroup[(rad.tgn - 1)].texture);
 		gl.uniform1i(programInfo[pro].uniformLocations.uSampler, 0);
 	}
+	
+	// --- 1. ENABLE POLYGON OFFSET ---
+	// Pushes the solid triangles slightly into the screen (away from the camera).
+	// Factor 1.0 pushes slanted polygons back, Units 2.0 pushes flat polygons back.
+	if (rad.hasEdges && rad.edgebuf) {
+		gl.enable(gl.POLYGON_OFFSET_FILL);
+		gl.polygonOffset(0.19, 0.19); 
+	}
 
+	// 2. Draw the solid mesh!
 	if (rad.use32Int) gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_INT, 0);
 	else gl.drawElements(gl.TRIANGLES, rad.ni, gl.UNSIGNED_SHORT, 0);
+	
+	// 3. DISABLE POLYGON OFFSET
+	if (rad.hasEdges && rad.edgebuf) {
+		gl.disable(gl.POLYGON_OFFSET_FILL);
+	}
 
 	// === BLACK OUTLINES FOR LEGACY .rad MODELS ===
 	if (rad.hasEdges && rad.edgebuf && rad.edgeColorBuf) {
@@ -2843,8 +2857,22 @@ function drawrad3D(rad, ox, oy, oz, omat) {
 			if (programInfo[0].uniformLocations.applySnapFilter) gl.uniform1f(programInfo[0].uniformLocations.applySnapFilter, stageLightsOn ? 0.0 : 1.0);
 			if (programInfo[0].uniformLocations.uBraking) gl.uniform1f(programInfo[0].uniformLocations.uBraking, rad.isBraking ? 1.0 : 0.0);
 			
-			gl.lineWidth(2.5);
+			// --- PERFECT NATIVE BRESENHAM LINES ---
+			// Remove the offset to guarantee a flawless 1-pixel-thick line 
+			// without any 2-1-2-1 clustered overlaps!
+			var loc = programInfo[0].uniformLocations.uLineOffset;
+			if (loc) {
+				gl.uniform2f(loc, 0.0, 0.0); 
+			}
+			
+			// 1. Draw the native WebGL lines 
 			gl.drawElements(gl.LINES, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
+			
+			// 2. PLUG THE OPENGL HOLES!
+			// Because WebGL intentionally drops the final pixel of every line segment, 
+			// the corners are left blank. We draw the exact same buffer as 1-pixel POINTS
+			// to instantly plug all the transparent holes, creating a perfectly continuous line!
+			//gl.drawElements(gl.POINTS, rad.edgeCount, gl.UNSIGNED_SHORT, 0);
 		}
 	}
 
@@ -2879,6 +2907,8 @@ function setworld(snapArr, fogcArr, ldx, ldy, ldz, fogD) {
 			
 			uniform float applySnapFilter; 
 			uniform float uBraking; 
+			
+			uniform vec2 uLineOffset; // THE SHIFT UNIFORM
 
 			varying lowp vec4 vColor; 
 			varying vec3 v_posf; 
@@ -2908,9 +2938,16 @@ function setworld(snapArr, fogcArr, ldx, ldy, ldz, fogD) {
 				// --- EXACT PHYSICAL DEPTH NUDGE ---
 				// Regular outlines get 0.05, but Light/Decal outlines get 0.20 
 				// so they sit on top of the 0.15 depth nudge from the main shader!
-				float nudgeDist = isDecal ? 0.4 : 0.4;
-				viewPos.xyz -= normalize(viewPos.xyz) * nudgeDist; 
 				gl_Position = uProjectionMatrix * viewPos;
+				float dist = length(viewPos.xyz);
+				float nudgeDist = isDecal ? 0.12 : 0.12;
+				gl_Position.z -= nudgeDist;
+				
+				// Native Bresenham Screen Shift (If you still use it)
+				gl_Position.xy += uLineOffset * gl_Position.w;
+				
+				// Perfectly plugs the 1-pixel holes on the corners!
+				gl_PointSize = 1.0;
 				
 				if (isGr13 && uLastCheckRemaining < 0.5) gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
 				
@@ -3033,11 +3070,11 @@ function setworld(snapArr, fogcArr, ldx, ldy, ldz, fogD) {
 				
 				// --- EXACT PHYSICAL DEPTH NUDGE ---
 			// Pulls decals exactly 0.15 physical units toward the camera lens
-			if (isDecal) {
-				viewPos.xyz -= normalize(viewPos.xyz) * 0.4; 
-			}
 			
 			gl_Position = uProjectionMatrix * viewPos;
+			if (isDecal) {
+				gl_Position.z -= 0.1;
+			}
 				
 				if (isGr13 && uLastCheckRemaining < 0.5) gl_Position = vec4(0.0, 0.0, 0.0, 0.0);
 				
@@ -3078,6 +3115,12 @@ float f1 = mix(minLight, maxLight, curve);
 				// ------------------------------------------------
 
 				bool isGlass = (aVertexColor.a < 0.95);
+				// --- JAVA NFM DYNAMIC GLASS COLOR ---
+				// If it is a Car or Stage Piece, and it has transparency, replace the 
+				// statically baked color with the live Sky Color!
+				if (isGlass && uEnvBlendMode == 0.0) {
+					finalColor = uSkyColor;
+				}
 				float lightIntensity = 0.0;
 				bool activeLight = false;
 				
@@ -3166,7 +3209,8 @@ float f1 = mix(minLight, maxLight, curve);
 					uCamPos: gl.getUniformLocation(shaderProg, 'uCamPos'),
 					uCarPos: gl.getUniformLocation(shaderProg, 'uCarPos'),
 					uUsesSpecialLighting: gl.getUniformLocation(shaderProg, 'uUsesSpecialLighting'),
-					uStrictShader: gl.getUniformLocation(shaderProg, 'uStrictShader')
+					uStrictShader: gl.getUniformLocation(shaderProg, 'uStrictShader'),
+					uLineOffset: gl.getUniformLocation(shaderProg, 'uLineOffset')
 				}
 			};
 		}
@@ -5013,7 +5057,7 @@ function gameworks() {
 	var aspect = (canw / canh);
 	// Increased zNear from 0.1 to 2.0 to give the depth buffer MUCH better precision 
 	// over long distances, which prevents Z-fighting on the cars/track.
-	var zNear = 0.1; 
+	var zNear = 4.0; 
 	
 	// Massively pushed back the Far Clipping Plane to 150,000 to prevent 
 	// the distant procedural clouds and mountains from being sliced invisible!
@@ -5484,9 +5528,9 @@ for (var i = 0; i < 9; i++) {
 function carselect() {
 	var fieldOfView = ((55 * Math.PI) / 180);
 	var aspect = (canw / canh);
-	//var zNear = 0.1;
+	//var zNear = 4.0;
 	//var zFar = 7000;
-	var zNear = 0.1; 
+	var zNear = 4.0; 
 	var zFar = 100000.0;
 	cmat = mat4.create();
 	mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
@@ -5703,7 +5747,7 @@ var fallen = 0;
 function stageselect() {
 	var fieldOfView = ((55 * Math.PI) / 180);
 	var aspect = (canw / canh);
-	var zNear = 0.1;
+	var zNear = 4.0;
 	var zFar = 7000;
 	cmat = mat4.create();
 	mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
@@ -5782,7 +5826,7 @@ function unlockedcar() {
 	if (fredo == 76) {
 		var fieldOfView = ((55 * Math.PI) / 180);
 		var aspect = (canw / canh);
-		var zNear = 0.1;
+		var zNear = 4.0;
 		var zFar = 7000;
 		cmat = mat4.create();
 		mat4.perspective(cmat, fieldOfView, aspect, zNear, zFar);
@@ -5876,7 +5920,7 @@ function render() {
 	var iFov = lerp(pFieldOfView, targetFov, alpha);
 
 	var aspect = (canw / canh);
-	var zNear = 0.1;
+	var zNear = 4.0;
 
 	// 1. SCENERY MATRIX (Massive Render Distance for Backgrounds)
 	var cmatScenery = mat4.create();
@@ -12095,14 +12139,39 @@ function mainEngineLoop(currentTime) {
 	if (dt > 250) dt = 250; 
 
 	// --- 1. UNCAPPED INPUT & WINDOW POLLING ---
-	if (canw != window.innerWidth || tcanh != window.innerHeight) {
-		canw = window.innerWidth; canh = window.innerHeight; tcanh = canh;
+	var dpr = window.devicePixelRatio || 1;
+	var physicalWidth = Math.floor(window.innerWidth * dpr);
+	var physicalHeight = Math.floor(window.innerHeight * dpr);
+
+	if (canw != physicalWidth || tcanh != physicalHeight) {
+		canw = physicalWidth; 
+		canh = physicalHeight; 
+		tcanh = canh;
+		
 		if (canh > canw) { canh = canw; needrotate = true; } else { needrotate = false; }
-		mw = (canw / 1280); mh = (canh / 720); avm = ((mw + mh) / 2); adm = (((canw / canh) - 1.777) * 76);
-		canvas3D.width = canw; canvas3D.height = canh;
-		canvas3D.style.width = "" + canw + "px"; canvas3D.style.height = "" + canh + "px";
-		canvas2D.width = canw; canvas2D.height = tcanh;
-		canvas2D.style.width = "" + canw + "px"; canvas2D.style.height = "" + tcanh + "px";
+		
+		// The UI scale multipliers will automatically adapt to the super-sampled physical resolution!
+		mw = (canw / 1280); 
+		mh = (canh / 720); 
+		avm = ((mw + mh) / 2); 
+		adm = (((canw / canh) - 1.777) * 76);
+		
+		// 1. Set the internal WebGL rendering resolution to match the physical monitor pixels
+		canvas3D.width = canw; 
+		canvas3D.height = canh;
+		
+		// 2. Set the CSS display size to the logical window size so it fits the screen
+		canvas3D.style.width = window.innerWidth + "px"; 
+		canvas3D.style.height = window.innerHeight + "px";
+		
+		canvas3D.style.imageRendering = "pixelated"; // Chrome/Edge/Firefox
+		canvas2D.style.imageRendering = "pixelated";
+		
+		canvas2D.width = canw; 
+		canvas2D.height = tcanh;
+		canvas2D.style.width = window.innerWidth + "px"; 
+		canvas2D.style.height = window.innerHeight + "px";
+		
 		gl.viewport(0, 0, canw, canh);
 		gofullscreen = false;
 	}
@@ -17773,121 +17842,121 @@ function generateProceduralEnvironment(skyc, fogc, cloudsc) {
 
 
 function createProceduralWheel(w, rims, gwgr) {
-    var mesh = newrad3D();
-    mesh.isLegacyRad = true;
-    mesh.hasEdges = true;
-    mesh.ownlight = true;
-    mesh.alpha = 0;
+	var mesh = newrad3D();
+	mesh.isLegacyRad = true;
+	mesh.hasEdges = true;
+	mesh.ownlight = true;
+	mesh.alpha = 0;
 
-    var verts = [], norms = [], colors = [], indices = [], edges = [];
-    var vIndex = 0;
+	var verts = [], norms = [], colors = [], indices = [], edges = [];
+	var vIndex = 0;
 
-    var segs = window.WHEEL_SEGMENTS || 6;
-    
-    var physicsRadius = w.height * 1.3; 
-    var R = physicsRadius / Math.cos(Math.PI / segs); 
-    var hw = Math.abs(w.width) * 4.0;
-    var rimR = rims.size * 0.1;
-    var depthRatio = rims.depth * 0.1;
-    var sizeRatio = rims.size * 0.1;
-    
-    if (sizeRatio > 0) {
-        if (depthRatio / sizeRatio > 41.0) depthRatio = sizeRatio * 41.0;
-        if (depthRatio / sizeRatio < -25.0) depthRatio = -sizeRatio * 25.0;
-    }
-    
-    var hubX = depthRatio * Math.abs(w.width); 
+	var segs = window.WHEEL_SEGMENTS || 6;
+	
+	var physicsRadius = w.height * 1.3; 
+	var R = physicsRadius / Math.cos(Math.PI / segs); 
+	var hw = Math.abs(w.width) * 4.0;
+	var rimR = rims.size * 0.1;
+	var depthRatio = rims.depth * 0.1;
+	var sizeRatio = rims.size * 0.1;
+	
+	if (sizeRatio > 0) {
+		if (depthRatio / sizeRatio > 41.0) depthRatio = sizeRatio * 41.0;
+		if (depthRatio / sizeRatio < -25.0) depthRatio = -sizeRatio * 25.0;
+	}
+	
+	var hubX = depthRatio * Math.abs(w.width); 
 
-    var isLeft = (w.width < 0);
-    var signX = isLeft ? -1 : 1;
+	var isLeft = (w.width < 0);
+	var signX = isLeft ? -1 : 1;
 
-    var tCol = [gwgr / 255, gwgr / 255, gwgr / 255, 1.0];
-    var rCol = [rims.r / 255, rims.g / 255, rims.b / 255, 1.0];
-    var darkTire = [tCol[0] * 0.8, tCol[1] * 0.8, tCol[2] * 0.8, 1.0];
+	var tCol = [gwgr / 255, gwgr / 255, gwgr / 255, 1.0];
+	var rCol = [rims.r / 255, rims.g / 255, rims.b / 255, 1.0];
+	var darkTire = [tCol[0] * 0.8, tCol[1] * 0.8, tCol[2] * 0.8, 1.0];
 
-    function addFace(points, col, addOutline) {
-        if (points.length < 3) return;
-        
-        var pts = points.map(p => [p[0] * signX, p[1], p[2]]);
-        if (isLeft) pts.reverse();
+	function addFace(points, col, addOutline) {
+		if (points.length < 3) return;
+		
+		var pts = points.map(p => [p[0] * signX, p[1], p[2]]);
+		if (isLeft) pts.reverse();
 
-        var p1 = pts[0], p2 = pts[1], p3 = pts[2];
-        var nx = (p2[1]-p1[1])*(p3[2]-p1[2]) - (p2[2]-p1[2])*(p3[1]-p1[1]);
-        var ny = (p2[2]-p1[2])*(p3[0]-p1[0]) - (p2[0]-p1[0])*(p3[2]-p1[2]);
-        var nz = (p2[0]-p1[0])*(p3[1]-p1[1]) - (p2[1]-p1[1])*(p3[0]-p1[0]);
-        var len = Math.sqrt(nx*nx + ny*ny + nz*nz);
-        if(len > 0) { nx/=len; ny/=len; nz/=len; } else { ny=1; nx=0; nz=0; }
+		var p1 = pts[0], p2 = pts[1], p3 = pts[2];
+		var nx = (p2[1]-p1[1])*(p3[2]-p1[2]) - (p2[2]-p1[2])*(p3[1]-p1[1]);
+		var ny = (p2[2]-p1[2])*(p3[0]-p1[0]) - (p2[0]-p1[0])*(p3[2]-p1[2]);
+		var nz = (p2[0]-p1[0])*(p3[1]-p1[1]) - (p2[1]-p1[1])*(p3[0]-p1[0]);
+		var len = Math.sqrt(nx*nx + ny*ny + nz*nz);
+		if(len > 0) { nx/=len; ny/=len; nz/=len; } else { ny=1; nx=0; nz=0; }
 
-        var startIdx = vIndex;
-        for(var i = 0; i < pts.length; i++) {
-            verts.push(pts[i][0], pts[i][1], pts[i][2]);
-            norms.push(nx, ny, nz);
-            colors.push(col[0], col[1], col[2], col[3]);
-            vIndex++;
-        }
+		var startIdx = vIndex;
+		for(var i = 0; i < pts.length; i++) {
+			verts.push(pts[i][0], pts[i][1], pts[i][2]);
+			norms.push(nx, ny, nz);
+			colors.push(col[0], col[1], col[2], col[3]);
+			vIndex++;
+		}
 
-        for (var i = 1; i < pts.length - 1; i++) {
-            indices.push(startIdx, startIdx + i, startIdx + i + 1);
-        }
+		for (var i = 1; i < pts.length - 1; i++) {
+			indices.push(startIdx, startIdx + i, startIdx + i + 1);
+		}
 
-        // We only push EDGES here, no colors!
-        if (addOutline === true) {
-            for (var i = 0; i < pts.length; i++) {
-                edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
-            }
-        } else if (Array.isArray(addOutline)) {
-            for (var i = 0; i < pts.length; i++) {
-                if (addOutline[i]) {
-                    edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
-                }
-            }
-        }
-    }
+		// We only push EDGES here, no colors!
+		if (addOutline === true) {
+			for (var i = 0; i < pts.length; i++) {
+				edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
+			}
+		} else if (Array.isArray(addOutline)) {
+			for (var i = 0; i < pts.length; i++) {
+				if (addOutline[i]) {
+					edges.push(startIdx + i, startIdx + ((i + 1) % pts.length));
+				}
+			}
+		}
+	}
 
-    var ringOut = [], ringIn = [], ringRim = [];
-    var cIn = [-hw, 0, 0];
-    var cOut = [hubX, 0, 0]; 
+	var ringOut = [], ringIn = [], ringRim = [];
+	var cIn = [-hw, 0, 0];
+	var cOut = [hubX, 0, 0]; 
 
-    for (var i = 0; i < segs; i++) {
-        var theta = (i * Math.PI * 2 / segs) + (Math.PI / segs);
-        var cy = R * Math.cos(theta), cz = R * Math.sin(theta);
-        var ry = rimR * Math.cos(theta), rz = rimR * Math.sin(theta);
-        ringIn.push([-hw, cy, cz]);
-        ringOut.push([hw, cy, cz]);
-        ringRim.push([hw, ry, rz]);
-    }
+	for (var i = 0; i < segs; i++) {
+		var theta = (i * Math.PI * 2 / segs) + (Math.PI / segs);
+		var cy = R * Math.cos(theta), cz = R * Math.sin(theta);
+		var ry = rimR * Math.cos(theta), rz = rimR * Math.sin(theta);
+		ringIn.push([-hw, cy, cz]);
+		ringOut.push([hw, cy, cz]);
+		ringRim.push([hw, ry, rz]);
+	}
 
-    for (var i = 0; i < segs; i++) {
-        var n1 = i, n2 = (i + 1) % segs;
-        addFace([ringIn[n2], ringOut[n2], ringOut[n1], ringIn[n1]], tCol, false);
-        addFace([ringOut[n2], ringRim[n2], ringRim[n1], ringOut[n1]], tCol, [false, true, false, true]);
-        addFace([ringIn[n1], cIn, ringIn[n2]], darkTire, false);
-        addFace([ringRim[n2], cOut, ringRim[n1]], rCol, true);
-    }
+	for (var i = 0; i < segs; i++) {
+		var n1 = i, n2 = (i + 1) % segs;
+		addFace([ringIn[n2], ringOut[n2], ringOut[n1], ringIn[n1]], tCol, false);
+		addFace([ringOut[n2], ringRim[n2], ringRim[n1], ringOut[n1]], tCol, [false, true, false, true]);
+		addFace([ringIn[n1], cIn, ringIn[n2]], darkTire, false);
+		addFace([ringRim[n2], cOut, ringRim[n1]], rCol, true);
+	}
 
-    // --- THE FIX: PERFECT PARALLEL EDGE COLOR BUFFER ---
-    // We create a perfectly sized array of pure black that perfectly matches the vertex count!
-    var darkColors = new Float32Array(colors.length);
-    for (var i = 0; i < colors.length; i += 4) {
-        darkColors[i] = 0.0;
-        darkColors[i + 1] = 0.0;
-        darkColors[i + 2] = 0.0;
-        darkColors[i + 3] = 1.0;
-    }
+	// --- THE FIX: PERFECT PARALLEL EDGE COLOR BUFFER ---
+	// We create a perfectly sized array of pure black that perfectly matches the vertex count!
+	var darkColors = new Float32Array(colors.length);
+	for (var i = 0; i < colors.length; i += 4) {
+		darkColors[i] = 0.0;
+		darkColors[i + 1] = 0.0;
+		darkColors[i + 2] = 0.0;
+		darkColors[i + 3] = 1.0;
+	}
 
-    mesh.vbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
-    mesh.nbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
-    mesh.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.cbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
-    mesh.ibuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-    mesh.edgebuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.edgebuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(edges), gl.STATIC_DRAW);
-    
-    // Bind the perfectly aligned darkColors array
-    mesh.edgeColorBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.edgeColorBuf); gl.bufferData(gl.ARRAY_BUFFER, darkColors, gl.STATIC_DRAW);
+	mesh.vbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+	mesh.nbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
+	mesh.cbuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.cbuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+	mesh.ibuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+	mesh.edgebuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.edgebuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(edges), gl.STATIC_DRAW);
+	
+	// Bind the perfectly aligned darkColors array
+	mesh.edgeColorBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, mesh.edgeColorBuf); gl.bufferData(gl.ARRAY_BUFFER, darkColors, gl.STATIC_DRAW);
 
-    mesh.ni = indices.length;
-    mesh.edgeCount = edges.length;
-    mesh.loaded = 1;
-    return mesh;
+	mesh.ni = indices.length;
+	mesh.edgeCount = edges.length;
+	mesh.loaded = 1;
+	return mesh;
 }
 
 
