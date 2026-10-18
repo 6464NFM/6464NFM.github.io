@@ -14,6 +14,7 @@ ground(193,181,159,2,0.4,0.2) //ground(r,g,b,textureNum,addedHueChangeFactor,add
 lightswingZ(-10)
 distfog(11700)
 addon(1)
+lightson()
 
 tip(This stage is hard to finish by racing or wasting; it is hard)
 tip(to finish by racing cause you are up against Mighty Eight which)
