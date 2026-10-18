@@ -13904,8 +13904,12 @@ function drawinter() {
 				if ((cp.stage == 1) && (unlocked == 1)) {
 					nkb = 5;
 				}
+				var dpr = window.devicePixelRatio || 1;
+				var touchX = xm[i] * dpr;
+				var touchY = ym[i] * dpr;
+				
 				for (var k = 0; k < nkb; k++) {
-					var pypr = py(xpr[k], xm[i], ypr[k], ym[i]);
+					var pypr = py(xpr[k], touchX, ypr[k], touchY);
 					if (pypr < pyclos) {
 						pyclos = pypr;
 						onkb = k;
@@ -16340,7 +16344,10 @@ function drawbutton(onx, xb, yb, wb, hb, cb1, cb2, cb3, cb4, typ, txt, fz, opa, 
 		mnms = 1;
 	}
 	for (var i = 0; i < mnms; i++) {
-		if ((xm[i] > (xbd - (hb * 0.3))) && (xm[i] < (xbd + wb + (hb * 0.3))) && (ym[i] > ybd) && (ym[i] < (ybd + hb))) {
+		var dpr = window.devicePixelRatio || 1;
+		var touchX = xm[i] * dpr;
+		var touchY = ym[i] * dpr;
+		if ((touchX > (xbd - (hb * 0.3))) && (touchX < (xbd + wb + (hb * 0.3))) && (touchY > ybd) && (touchY < (ybd + hb))) {
 			if (mdown) {
 				wasonit[i] = onx;
 				hasonx = true;
@@ -16443,7 +16450,10 @@ function oncla(onx, xa, ya, wa, ha) {
 		mnms = 1;
 	}
 	for (var i = 0; i < mnms; i++) {
-		if ((xm[i] > xa) && (xm[i] < (xa + wa)) && (ym[i] > ya) && (ym[i] < (ya + ha))) {
+		var dpr = window.devicePixelRatio || 1;
+		var touchX = xm[i] * dpr;
+		var touchY = ym[i] * dpr;
+		if ((touchX > xa) && (touchX < (xa + wa)) && (touchY > ya) && (touchY < (ya + ha))) {
 			if (mdown) {
 				wasonit[i] = onx;
 				oncl = 1;
